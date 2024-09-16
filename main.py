@@ -73,6 +73,7 @@ class Cylinder:
         self.gas = GasMixture()
         self.pressure = {}
 
+
 class ProfilePoint:
     def __init__(self, depth, time):
         self._depth = depth
@@ -92,9 +93,8 @@ class Profile:
         self.segments = {}
 
     def add_segment(self, segment, cylinder):
-
+        pass
 
 
 if __name__ == '__main__':
     profile = {}
-
