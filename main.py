@@ -3,14 +3,17 @@ from profile import *
 # Initialize setup object
 setup = Setup()
 
-# Create cylinders
-cylinders = [Cylinder(size=12), Cylinder(gas=GasMixture(o2=50), size=10)]
+# Create tanks
+cylinders = [Tank(size=12),
+             Tank(gas=Gas(o2=50), size=10)]
 
 # Create Waypoints
-waypoints = [Waypoint(depth=30, time=20, cylinder=0), Waypoint(depth=25, time=10, cylinder=1)]
+waypoints = [Waypoint(depth=30, time=20, tank=0),
+             Waypoint(depth=25, time=10, tank=1)]
 
 # Create profile
-profile = Profile(setup=setup, cylinders=cylinders, waypoints=waypoints)
+profile = Profile(setup=setup, tanks=cylinders, waypoints=waypoints)
 
-for w in profile.waypoints:
-    print(w.depth, w.time, profile._cylinders[w.cylinder].gas, profile._cylinders[w.cylinder].pressure)
+i = 0
+for k, w in profile.waypoints.items():
+    print(w.depth, w.runtime, w.time, w.tank, profile.tanks[w.tank].gas, profile.tanks[w.tank].pressure[k])

@@ -1,6 +1,5 @@
 import math
 import json
-from copy import deepcopy
 from pathlib import Path
 import numpy as np
 
@@ -43,7 +42,7 @@ class Setup:
         self.__dict__ = json.loads(json_str)
 
 
-class GasMixture:
+class Gas:
     def __init__(self, o2: int = 21, he: int = 0) -> None:
         self._O2 = o2
         self._He = he
@@ -87,7 +86,7 @@ class GasMixture:
         if (self._O2 == 21) and (self._He == 0):
             return 'Air'
         elif self._He == 0:
-            return 'Nitrox{}'.format(self._O2)
+            return 'EAN{}'.format(self._O2)
         else:
             return 'Trimix{}/{}'.format(self._O2, self._He)
 
@@ -95,8 +94,8 @@ class GasMixture:
         return '<Gas Mixture: O2: {} N2: {} He: {}>'.format(self._O2, self._N2, self._He)
 
 
-class Cylinder:
-    def __init__(self, p_start: int = 200, gas: GasMixture = GasMixture(), size: int = 15):
+class Tank:
+    def __init__(self, p_start: int = 200, gas: Gas = Gas(), size: int = 15):
         self._gas = gas
         self.pressure = [p_start]
         self._size = size
@@ -111,11 +110,12 @@ class Cylinder:
 
 
 class Waypoint:
-    def __init__(self, depth: float, time: int, cylinder: int) -> None:
+    def __init__(self, depth: float, time: int, tank: int) -> None:
         self._depth = depth
         self._time = time
-        self._cylinder = cylinder
+        self._tank = tank
         self.compartments = np.zeros(16)
+        self.runtime = 0
 
     @property
     def ata_depth(self):
@@ -130,14 +130,14 @@ class Waypoint:
         return self._time
 
     @property
-    def cylinder(self):
-        return self._cylinder
+    def tank(self):
+        return self._tank
 
 
 class Profile:
-    def __init__(self, setup: Setup, cylinders: list[Cylinder], waypoints: list[Waypoint]) -> None:
+    def __init__(self, setup: Setup, tanks: list[Tank], waypoints: list[Waypoint]) -> None:
         self._setup = setup
-        self._cylinders = cylinders
+        self._tanks = tanks
         self._waypoints = waypoints
 
         self._complete_profile()
@@ -150,27 +150,39 @@ class Profile:
         if self._waypoints[0].depth != 0:
             time_to_bottom = math.ceil(self._waypoints[0].depth / self._setup.v_desc)
             self._waypoints.insert(0, Waypoint(depth=0, time=time_to_bottom,
-                                               cylinder=self._waypoints[0].cylinder))
+                                               tank=self._waypoints[0].tank))
         if self._waypoints[-1].depth != 0:
-            self._waypoints.append(Waypoint(depth=5, time=3, cylinder=self._cylinders.index(self._cylinders[-1])))
+            self._waypoints.append(Waypoint(depth=5, time=3, tank=self._tanks.index(self._tanks[-1])))
             time_to_surface = math.ceil(self._waypoints[-1].depth / self._setup.v_asc)
-            self._waypoints.append(Waypoint(depth=0, time=time_to_surface,
-                                            cylinder=self._cylinders.index(self._cylinders[-1])))
+            self._waypoints.append(Waypoint(depth=5, time=time_to_surface,
+                                            tank=self._tanks.index(self._tanks[-1])))
+            time_to_surface = math.ceil(self._waypoints[-1].depth / self._setup.v_asc)
+            self._waypoints.append(Waypoint(depth=0, time=0,
+                                            tank=self._tanks.index(self._tanks[-1])))
 
     def _calculate_profile(self):
         self._waypoints[0].compartments = np.full(16, 0.79 * (1 - 0.0567))
-        for wp in range(1, len(self._waypoints)):
-            cons = (self._waypoints[wp-1].ata_depth + self._waypoints[wp].ata_depth) / 2
-            cons = cons * self._waypoints[wp-1].time
-            start_press = self._cylinders[self._waypoints[wp-1].cylinder].pressure[wp-1]
-            end_press = (start_press -
-                         (cons * self._setup.own_bottom_sac / self._cylinders[self._waypoints[wp-1].cylinder].size))
-            self._cylinders[self._waypoints[wp-1].cylinder].pressure.append(math.floor(end_press))
 
-            for cyl in range(len(self._cylinders)):
-                if cyl != self._waypoints[wp-1].cylinder:
-                    self._cylinders[cyl].pressure.append(self._cylinders[cyl].pressure[wp-1])
+        for wp in range(1, len(self._waypoints)):
+            self._waypoints[wp].runtime = self._waypoints[wp-1].runtime + self._waypoints[wp-1].time
+            self._calculate_gas(wp)
+
+    def _calculate_gas(self, wp):
+        cons = (self._waypoints[wp - 1].ata_depth + self._waypoints[wp].ata_depth) / 2
+        cons = cons * self._waypoints[wp - 1].time
+        start_press = self._tanks[self._waypoints[wp - 1].tank].pressure[wp - 1]
+        end_press = (start_press -
+                     (cons * self._setup.own_bottom_sac / self._tanks[self._waypoints[wp - 1].tank].size))
+        self._tanks[self._waypoints[wp - 1].tank].pressure.append(math.floor(end_press))
+
+        for cyl in range(len(self._tanks)):
+            if cyl != self._waypoints[wp - 1].tank:
+                self._tanks[cyl].pressure.append(self._tanks[cyl].pressure[wp - 1])
 
     @property
     def waypoints(self):
-        return deepcopy(self._waypoints)
+        return dict(enumerate(self._waypoints))
+
+    @property
+    def tanks(self):
+        return dict(enumerate(self._tanks))
