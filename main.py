@@ -6,11 +6,15 @@ setup = Setup()
 
 # Create tanks
 cylinders = [Tank(size=12),
-             Tank(gas=Gas(o2=50), size=10)]
+             ]
 
 # Create Waypoints
-waypoints = [Waypoint(depth=30, time=20, tank=0),
-             Waypoint(depth=25, time=10, tank=1)]
+waypoints = [Waypoint(depth=40, time=20, tank=0),
+             Waypoint(depth=40, time=4, tank=0),
+             Waypoint(depth=0, time=4000, tank=0),
+             Waypoint(depth=0, time=2, tank=0),
+             Waypoint(depth=40, time=20, tank=0),
+             Waypoint(depth=40, time=4, tank=0)]
 
 # Create profile
 profile = Profile(setup=setup, tanks=cylinders, waypoints=waypoints)
@@ -19,8 +23,10 @@ i = 0
 depth = []
 runtime = []
 for k, w in profile.waypoints.items():
-    print(w.depth, w.runtime, w.time, w.tank, profile.tanks[w.tank].gas, [profile.tanks[t].pressure[k]
-                                                                          for t in range(len(profile.tanks))])
+    print(w.depth, w.runtime, w.time, w.tank, profile.tanks[w.tank].gas,
+          [profile.tanks[t].pressure[k] for t in range(len(profile.tanks))], w.ceiling)
+
+    print(w.load_n2)
     depth.append(w.depth)
     runtime.append(w.runtime)
 
