@@ -1,22 +1,16 @@
-import math
 import json
+import math
+from math import log, ceil
 from pathlib import Path
+
 import numpy as np
-from math import log
 
-
-h_n2 = np.array([5.0, 8.0, 12.5, 18.5, 27.0, 38.3, 54.3, 77.0, 109.0, 146.0, 187.0, 239.0, 305.0, 390.0, 498.0,
-                 635.0])
-a_n2 = np.array([1.1696, 1.0000, 0.8618, 0.7562, 0.6200, 0.5043, 0.4410, 0.4000, 0.3750, 0.3500, 0.3295, 0.3065,
-                 0.2835, 0.2610, 0.2480, 0.2327])
-b_n2 = np.array([0.5578, 0.6514, 0.7222, 0.7825, 0.8126, 0.8434, 0.8693, 0.8910, 0.9092, 0.9222, 0.9319, 0.9403,
-                 0.9477, 0.9544, 0.9602, 0.9653])
-h_he = np.array([1.88, 3.02, 4.72, 6.99, 10.21, 14.48, 20.53, 29.11, 41.20, 55.19, 70.69, 90.34, 115.29, 147.42,
-                 188.24, 240.03])
-a_he = np.array([1.6189, 1.3830, 1.1919, 1.0458, 0.9220, 0.8205, 0.7305, 0.6502, 0.5950, 0.5545, 0.5333, 0.5189,
-                 0.5181, 0.5176, 0.5172, 0.5119])
-b_he = np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553, 0.8757, 0.8903, 0.8997, 0.9073,
-                 0.9122, 0.9171, 0.9217, 0.9267])
+h_n2 = np.array([5.0, 8.0, 12.5, 18.5, 27.0, 38.3, 54.3, 77.0, 109.0, 146.0, 187.0, 239.0, 305.0, 390.0, 498.0, 635.0])
+a_n2 = np.array([1.1696, 1.0000, 0.8618, 0.7562, 0.6200, 0.5043, 0.4410, 0.4000, 0.3750, 0.3500, 0.3295, 0.3065, 0.2835, 0.2610, 0.2480, 0.2327])
+b_n2 = np.array([0.5578, 0.6514, 0.7222, 0.7825, 0.8126, 0.8434, 0.8693, 0.8910, 0.9092, 0.9222, 0.9319, 0.9403, 0.9477, 0.9544, 0.9602, 0.9653])
+h_he = np.array([1.88, 3.02, 4.72, 6.99, 10.21, 14.48, 20.53, 29.11, 41.20, 55.19, 70.69, 90.34, 115.29, 147.42, 188.24, 240.03])
+a_he = np.array([1.6189, 1.3830, 1.1919, 1.0458, 0.9220, 0.8205, 0.7305, 0.6502, 0.5950, 0.5545, 0.5333, 0.5189, 0.5181, 0.5176, 0.5172, 0.5119])
+b_he = np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553, 0.8757, 0.8903, 0.8997, 0.9073, 0.9122, 0.9171, 0.9217, 0.9267])
 pw = 0.0567
 
 
@@ -69,6 +63,9 @@ class Gas:
     def ppHe(self, depth: float) -> float:
         pabs = (depth / 10) + 1
         return pabs * self._He / 100
+
+    def mod(self, pp_o2 = 1.4):
+        return 10 * ((pp_o2 / (self._O2 / 100)) - 1)
 
     @property
     def O2(self) -> int:
@@ -147,7 +144,10 @@ class Waypoint:
 
     @property
     def ceiling(self):
-        return (np.max(self.ceilings) - 1) * 10
+        if np.max(self.ceilings) > 1.:
+            return (np.max(self.ceilings) - 1) * 10
+        else:
+            return 0.
 
 
 class Profile:
@@ -156,40 +156,59 @@ class Profile:
         self._tanks = tanks
         self._waypoints = waypoints
 
-        self._complete_profile()
         self._calculate_profile()
 
     def add_waypoint(self, segment):
         pass
 
     def _complete_profile(self):
-        if self._waypoints[0].depth != 0:
-            time_to_bottom = math.ceil(self._waypoints[0].depth / self._setup.v_desc)
-            self._waypoints.insert(0, Waypoint(depth=0, time=time_to_bottom,
-                                               tank=self._waypoints[0].tank))
+
         if self._waypoints[-1].depth != 0:
-            # self._waypoints.append(Waypoint(depth=5, time=3, tank=self._tanks.index(self._tanks[-1])))
-            # time_to_surface = math.ceil(self._waypoints[-1].depth / self._setup.v_asc)
-            # self._waypoints.append(Waypoint(depth=5, time=time_to_surface,
-            #                                 tank=self._tanks.index(self._tanks[-1])))
-            self._waypoints.append(Waypoint(depth=0, time=0,
+            self._waypoints.append(Waypoint(depth=5, time=3, tank=self._tanks.index(self._tanks[-1])))
+            time_to_surface = math.ceil(self._waypoints[-1].depth / self._setup.v_asc)
+            self._waypoints.append(Waypoint(depth=5, time=time_to_surface,
                                             tank=self._tanks.index(self._tanks[-1])))
+            self._waypoints.append(Waypoint(depth=0, time=0, tank=self._tanks.index(self._tanks[-1])))
 
     def _calculate_profile(self):
+        if self._waypoints[0].depth != 0:
+            time_to_bottom = ceil(self._waypoints[0].depth / self._setup.v_desc)
+            self._waypoints.insert(0, Waypoint(depth=0, time=time_to_bottom, tank=self._waypoints[0].tank))
         self._waypoints[0].load_n2 = np.full(16, 0.79 * (1 - pw))
 
-        for wp in range(1, len(self._waypoints)):
-            self._waypoints[wp].runtime = self._waypoints[wp-1].runtime + self._waypoints[wp-1].time
+        wp = 1
+        while wp < len(self._waypoints):
+            self._waypoints[wp].runtime = self._waypoints[wp - 1].runtime + self._waypoints[wp - 1].time
             self._calculate_gas(wp)
             self._waypoints[wp].load_n2, self._waypoints[wp].load_he = self._calculate_compartments(wp)
             self._waypoints[wp].ceilings = self._calculate_ceilings(wp)
+
+            if (wp == len(self._waypoints) - 1) and (self._waypoints[wp].depth > 0):
+                if self._waypoints[wp].ceiling <= 0:
+                    self._waypoints.append(Waypoint(depth=5, time=3, tank=self._tanks.index(self._tanks[-1])))
+                    time_to_surface = ceil(self._waypoints[-1].depth / self._setup.v_asc)
+                    self._waypoints.append(Waypoint(depth=5, time=time_to_surface,
+                                                    tank=self._tanks.index(self._tanks[-1])))
+                    self._waypoints.append(Waypoint(depth=0, time=0, tank=self._tanks.index(self._tanks[-1])))
+                else:
+                    # TODO calculate deco stops
+                    stop_depth = math.ceil(self._waypoints[wp].ceiling / 3) * 3
+
+                    deco_tank = 0
+                    max_o2 = 0
+                    for t in self._tanks:
+                        if (t.gas.O2 > max_o2) and (t.gas.mod(pp_o2=1.6) > stop_depth):
+                            deco_tank = self._tanks.index(t)
+
+                    new_wp = Waypoint(depth=stop_depth, time=1, tank=deco_tank)
+
+            wp = wp + 1
 
     def _calculate_gas(self, wp: int):
         cons = (self._waypoints[wp - 1].ata_depth + self._waypoints[wp].ata_depth) / 2
         cons = cons * self._waypoints[wp - 1].time
         start_press = self._tanks[self._waypoints[wp - 1].tank].pressure[wp - 1]
-        end_press = (start_press -
-                     (cons * self._setup.own_bottom_sac / self._tanks[self._waypoints[wp - 1].tank].size))
+        end_press = (start_press - (cons * self._setup.own_bottom_sac / self._tanks[self._waypoints[wp - 1].tank].size))
         self._tanks[self._waypoints[wp - 1].tank].pressure.append(math.floor(end_press))
 
         for cyl in range(len(self._tanks)):
@@ -201,27 +220,25 @@ class Profile:
 
         # Nitrogen first
         p0 = self._waypoints[wp - 1].load_n2
-        f_n2 = self._tanks[self._waypoints[wp-1].tank].gas.N2 / 100
+        f_n2 = self._tanks[self._waypoints[wp - 1].tank].gas.N2 / 100
         pi_n2 = np.full(16, f_n2 * (depth_ata - pw))
-        r_n2 = (((self._waypoints[wp].depth - self._waypoints[wp-1].depth) / self._waypoints[wp-1].time) * f_n2) / 10
+        r_n2 = (((self._waypoints[wp].depth - self._waypoints[wp - 1].depth) / self._waypoints[wp - 1].time) * f_n2) / 10
         k_n2 = log(2) / h_n2
-        load_n2 = schreiner_equation(pi_n2, p0, r_n2, self._waypoints[wp-1].time, k_n2)
+        load_n2 = schreiner_equation(pi_n2, p0, r_n2, self._waypoints[wp - 1].time, k_n2)
 
         # Helium next
         p0 = self._waypoints[wp - 1].load_he
         f_he = self._tanks[self._waypoints[wp - 1].tank].gas.He / 100
         pi_he = np.full(16, f_he * (depth_ata - pw))
-        r_he = (((self._waypoints[wp].depth - self._waypoints[wp-1].depth) / self._waypoints[wp - 1].time) * f_he) / 10
+        r_he = (((self._waypoints[wp].depth - self._waypoints[wp - 1].depth) / self._waypoints[wp - 1].time) * f_he) / 10
         k_he = log(2) / h_he
         load_he = schreiner_equation(pi_he, p0, r_he, self._waypoints[wp - 1].time, k_he)
 
         return load_n2, load_he
 
     def _calculate_ceilings(self, wp: int):
-        a = ((a_n2 * self._waypoints[wp].load_n2 + a_he * self._waypoints[wp].load_he) /
-             (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
-        b = ((b_n2 * self._waypoints[wp].load_n2 + b_he * self._waypoints[wp].load_he) /
-             (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
+        a = ((a_n2 * self._waypoints[wp].load_n2 + a_he * self._waypoints[wp].load_he) / (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
+        b = ((b_n2 * self._waypoints[wp].load_n2 + b_he * self._waypoints[wp].load_he) / (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
         return (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he - a) * b
 
     @property
