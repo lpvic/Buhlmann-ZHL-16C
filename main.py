@@ -10,10 +10,6 @@ cylinders = [Tank(size=12),
 
 # Create Waypoints
 waypoints = [Waypoint(depth=40, time=20, tank=0),
-             Waypoint(depth=40, time=4, tank=0),
-             Waypoint(depth=0, time=4000, tank=0),
-             Waypoint(depth=0, time=2, tank=0),
-             Waypoint(depth=40, time=20, tank=0),
              Waypoint(depth=40, time=4, tank=0)]
 
 # Create profile
@@ -26,7 +22,8 @@ for k, w in profile.waypoints.items():
     print(w.depth, w.runtime, w.time, w.tank, profile.tanks[w.tank].gas,
           [profile.tanks[t].pressure[k] for t in range(len(profile.tanks))], w.ceiling)
 
-    print(w.load_n2)
+    print(w.ceilings)
+
     depth.append(w.depth)
     runtime.append(w.runtime)
 

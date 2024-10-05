@@ -2,7 +2,7 @@ import math
 import json
 from pathlib import Path
 import numpy as np
-from math import exp, log
+from math import log
 
 
 h_n2 = np.array([5.0, 8.0, 12.5, 18.5, 27.0, 38.3, 54.3, 77.0, 109.0, 146.0, 187.0, 239.0, 305.0, 390.0, 498.0,
@@ -17,9 +17,10 @@ a_he = np.array([1.6189, 1.3830, 1.1919, 1.0458, 0.9220, 0.8205, 0.7305, 0.6502,
                  0.5181, 0.5176, 0.5172, 0.5119])
 b_he = np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553, 0.8757, 0.8903, 0.8997, 0.9073,
                  0.9122, 0.9171, 0.9217, 0.9267])
+pw = 0.0567
 
 
-def schreiner_equation(pi: float, p0: float, r: float, t: float, k: float) -> float:
+def schreiner_equation(pi: float | np.ndarray, p0: float | np.ndarray, r: float, t: float, k: float | np.ndarray) -> float:
     out = pi
     out = out + r * (t - (1 / k))
     out = out - (pi - p0 - (r / k)) * np.exp(-k * t)
@@ -175,7 +176,7 @@ class Profile:
                                             tank=self._tanks.index(self._tanks[-1])))
 
     def _calculate_profile(self):
-        self._waypoints[0].load_n2 = np.full(16, 0.79 * (1 - 0.0567))
+        self._waypoints[0].load_n2 = np.full(16, 0.79 * (1 - pw))
 
         for wp in range(1, len(self._waypoints)):
             self._waypoints[wp].runtime = self._waypoints[wp-1].runtime + self._waypoints[wp-1].time
@@ -201,7 +202,7 @@ class Profile:
         # Nitrogen first
         p0 = self._waypoints[wp - 1].load_n2
         f_n2 = self._tanks[self._waypoints[wp-1].tank].gas.N2 / 100
-        pi_n2 = np.full(16, f_n2 * (depth_ata - 0.0567))
+        pi_n2 = np.full(16, f_n2 * (depth_ata - pw))
         r_n2 = (((self._waypoints[wp].depth - self._waypoints[wp-1].depth) / self._waypoints[wp-1].time) * f_n2) / 10
         k_n2 = log(2) / h_n2
         load_n2 = schreiner_equation(pi_n2, p0, r_n2, self._waypoints[wp-1].time, k_n2)
@@ -209,7 +210,7 @@ class Profile:
         # Helium next
         p0 = self._waypoints[wp - 1].load_he
         f_he = self._tanks[self._waypoints[wp - 1].tank].gas.He / 100
-        pi_he = np.full(16, f_he * (depth_ata - 0.0567))
+        pi_he = np.full(16, f_he * (depth_ata - pw))
         r_he = (((self._waypoints[wp].depth - self._waypoints[wp-1].depth) / self._waypoints[wp - 1].time) * f_he) / 10
         k_he = log(2) / h_he
         load_he = schreiner_equation(pi_he, p0, r_he, self._waypoints[wp - 1].time, k_he)
@@ -222,8 +223,6 @@ class Profile:
         b = ((b_n2 * self._waypoints[wp].load_n2 + b_he * self._waypoints[wp].load_he) /
              (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
         return (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he - a) * b
-
-
 
     @property
     def waypoints(self):
