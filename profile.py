@@ -35,9 +35,9 @@ class Setup:
         self.v_desc = 20
 
         self.own_descent_sac = 20
-        self.own_bottom_sac = 17
-        self.own_ascent_sac = 22
-        self.buddy_ascent_sac = 22
+        self.own_bottom_sac = 20
+        self.own_ascent_sac = 17
+        self.buddy_ascent_sac = 17
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
@@ -185,38 +185,47 @@ class Profile:
                     self._add_safety_stop()
                 else:
                     self._add_direct_ascent()
+            else:
+                while self._waypoints[-1].ceiling > 0:
+                    stop_depth = math.ceil(self._waypoints[-1].ceiling / 3) * 3
+                    tank = self._select_gas(stop_depth)
+                    time_to_stop = ceil((self._waypoints[-1].depth - stop_depth) / self._setup.v_asc)
+                    self._waypoints[-1].time = time_to_stop
+                    self._waypoints.append(Waypoint(depth=stop_depth, time=1, tank=tank))
+                    self._calculate_waypoint(len(self._waypoints) - 1)
 
-        # if self._waypoints[-1].depth > 0:
-        #     if self._waypoints[-1].ceiling <= 0:
-        #         if self._safety_stop:
-        #
-        #         else:
-        #
-        #     else:
-        #         # TODO calculate deco stops
-        #         stop_depth = math.ceil(self._waypoints[wp].ceiling / 3) * 3
-        #
-        #         deco_tank = 0
-        #         max_o2 = 0
-        #         for t in self._tanks:
-        #             if (t.gas.O2 > max_o2) and (t.gas.mod(pp_o2=1.6) > stop_depth):
-        #                 deco_tank = self._tanks.index(t)
-        #
-        #         self._waypoints.append(Waypoint(depth=stop_depth, time=1, tank=deco_tank))
-        #         while
-        #         new_wp.load_n2, new_wp.load_he = self._calculate_compartments(new_wp)
-        #         self._waypoints[wp].ceilings = self._calculate_ceilings(wp)
+                    tank = self._select_gas(stop_depth)
+                    time_to_stop = ceil(3 / self._setup.v_asc)
+                    self._waypoints.append(Waypoint(depth=stop_depth, time=time_to_stop, tank=tank))
+                    self._calculate_waypoint(len(self._waypoints) - 1)
+
+                    while self._waypoints[-1].ceiling > (stop_depth - 3):
+                        self._waypoints[-2].time = self._waypoints[-2].time + 1
+                        self._calculate_waypoint(len(self._waypoints) - 2)
+                        self._calculate_waypoint(len(self._waypoints) - 1)
+
+                tank = self._select_gas(0)
+                time_to_surface = ceil(self._waypoints[-1].depth / self._setup.v_asc)
+                self._waypoints[-1].time = time_to_surface
+                self._waypoints.append(Waypoint(depth=0, time=0, tank=tank))
+                self._calculate_waypoint(len(self._waypoints) - 1)
 
     def _calculate_gas(self, wp: int):
         cons = (self._waypoints[wp - 1].ata_depth + self._waypoints[wp].ata_depth) / 2
         cons = cons * self._waypoints[wp - 1].time
         start_press = self._tanks[self._waypoints[wp - 1].tank].pressure[wp - 1]
         end_press = (start_press - (cons * self._setup.own_bottom_sac / self._tanks[self._waypoints[wp - 1].tank].size))
-        self._tanks[self._waypoints[wp - 1].tank].pressure.append(math.floor(end_press))
+        if (len(self._tanks[self._waypoints[wp - 1].tank].pressure) - 1) <= wp:
+            self._tanks[self._waypoints[wp - 1].tank].pressure.append(math.floor(end_press))
+        else:
+            self._tanks[self._waypoints[wp - 1].tank].pressure[wp] = math.floor(end_press)
 
         for cyl in range(len(self._tanks)):
             if cyl != self._waypoints[wp - 1].tank:
-                self._tanks[cyl].pressure.append(self._tanks[cyl].pressure[wp - 1])
+                if (len(self._tanks[cyl].pressure) - 1) <= wp:
+                    self._tanks[cyl].pressure.append(self._tanks[cyl].pressure[wp - 1])
+                else:
+                    self._tanks[cyl].pressure[wp] = self._tanks[cyl].pressure[wp - 1]
 
     def _calculate_compartments(self, wp: int):
         depth_ata = (self._waypoints[wp].depth / 10) + 1
@@ -247,29 +256,39 @@ class Profile:
     def _add_direct_ascent(self):
         if self._waypoints[-1].time < 0:
             self._waypoints[-1].time = ceil(self._waypoints[-1].depth / self._setup.v_asc)
-        self._waypoints.append(Waypoint(depth=0, time=0, tank=self._tanks.index(self._tanks[-1])))
 
-        wp = len(self._waypoints) - 1
-        self._calculate_waypoint(wp)
+        tank = self._select_gas(0)
+        self._waypoints.append(Waypoint(depth=0, time=0, tank=tank))
+        self._calculate_waypoint(len(self._waypoints) - 1)
 
     def _add_safety_stop(self):
         if self._waypoints[-1].time < 0:
             self._waypoints[-1].time = ceil(self._waypoints[-1].depth / self._setup.v_asc)
-        self._waypoints.append(Waypoint(depth=5, time=3, tank=self._tanks.index(self._tanks[-1])))
 
-        wp = len(self._waypoints) - 1
-        self._calculate_waypoint(-1)
+        tank = self._select_gas(5)
+        self._waypoints.append(Waypoint(depth=5, time=3, tank=tank))
+        self._calculate_waypoint(len(self._waypoints) - 1)
 
+        tank = self._select_gas(5)
         time_to_surface = ceil(self._waypoints[-1].depth / self._setup.v_asc)
-        self._waypoints.append(Waypoint(depth=5, time=time_to_surface, tank=self._tanks.index(self._tanks[-1])))
+        self._waypoints.append(Waypoint(depth=5, time=time_to_surface, tank=tank))
+        self._calculate_waypoint(len(self._waypoints) - 1)
 
-        wp = len(self._waypoints) - 1
-        self._calculate_waypoint(wp)
+        tank = self._select_gas(0)
+        self._waypoints.append(Waypoint(depth=0, time=0, tank=tank))
+        self._calculate_waypoint(len(self._waypoints) - 1)
 
-        self._waypoints.append(Waypoint(depth=0, time=0, tank=self._tanks.index(self._tanks[-1])))
+    def _select_gas(self, depth):
+        tank = 0
+        max_o2 = 0
+        for t in self._tanks:
+            if (t.gas.O2 > max_o2) and (t.gas.mod(pp_o2=1.6) > depth):
+                tank = self._tanks.index(t)
 
-        wp = len(self._waypoints) - 1
-        self._calculate_waypoint(wp)
+        return tank
+
+    def _add_deco_stops(self):
+        pass
 
     @property
     def waypoints(self):
