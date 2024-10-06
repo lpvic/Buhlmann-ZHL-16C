@@ -5,15 +5,15 @@ from matplotlib import pyplot as plt
 setup = Setup()
 
 # Create tanks
-cylinders = [Tank(size=12, gas=Gas(o2=32)),
-             ]
+tanks = [Tank(size=12, gas=Gas(o2=21))]  # ,
+         # Tank(size=10, gas=Gas(o2=50))]
 
 # Create Waypoints
-waypoints = [Waypoint(depth=45, time=20, tank=0),
-             Waypoint(depth=45, time=4, tank=0)]
+waypoints = [Waypoint(depth=15, time=40),
+             Waypoint(depth=15)]
 
 # Create profile
-profile = Profile(setup=setup, tanks=cylinders, waypoints=waypoints)
+profile = Profile(setup=setup, tanks=tanks, waypoints=waypoints)
 
 i = 0
 depth = []
