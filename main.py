@@ -2,7 +2,7 @@ from profile import *
 from matplotlib import pyplot as plt
 
 # Initialize setup object
-setup = Setup()
+params = Parameters()
 
 # Create tanks
 tanks = [Tank(size=12, gas=Gas(o2=21), p_start=200),
@@ -13,7 +13,7 @@ waypoints = [Waypoint(depth=15, time=15),
              Waypoint(depth=25)]
 
 # Create profile
-profile = Profile(setup=setup, tanks=tanks, waypoints=waypoints)
+profile = Profile(params=params, tanks=tanks, waypoints=waypoints)
 
 i = 0
 depth = []

@@ -26,7 +26,7 @@ class IncorrectGasMixture(Exception):
     pass
 
 
-class Setup:
+class Parameters:
     def __init__(self) -> None:
         self.last_stop_depth = 6
         self.stop_depth_incr = 3
@@ -38,6 +38,13 @@ class Setup:
         self.own_bottom_sac = 20
         self.own_ascent_sac = 17
         self.buddy_ascent_sac = 17
+
+        self.gf_high = 1.
+        self.gf_low = 1.
+
+        self.calc_ascent = True
+        self.deco_stops = True
+        self.safety_stop = True
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
@@ -64,7 +71,7 @@ class Gas:
         pabs = (depth / 10) + 1
         return pabs * self._He / 100
 
-    def mod(self, pp_o2 = 1.4):
+    def mod(self, pp_o2=1.4):
         return 10 * ((pp_o2 / (self._O2 / 100)) - 1)
 
     @property
@@ -146,17 +153,14 @@ class Waypoint:
             return 0.
 
     def __str__(self):
-        return ' '.join(self.depth, self.runtime, self.time, self.tank, self.ceiling)
+        return ' '.join([str(self.depth), str(self.runtime), str(self.time), str(self.tank), str(self.ceiling)])
 
 
 class Profile:
-    def __init__(self, setup: Setup, tanks: list[Tank], waypoints: list[Waypoint], calc_ascent: bool = True, deco_stops: bool = True, safety_stop: bool = True) -> None:
-        self._setup = setup
+    def __init__(self, params: Parameters, tanks: list[Tank], waypoints: list[Waypoint]) -> None:
+        self._params = params
         self._tanks = tanks
         self._waypoints = waypoints
-        self._deco_stops = deco_stops
-        self._safety_stop = safety_stop
-        self._calc_ascent = calc_ascent
 
         self._calculate_profile()
 
@@ -171,7 +175,7 @@ class Profile:
 
     def _calculate_profile(self):
         if self._waypoints[0].depth != 0:
-            time_to_bottom = ceil(self._waypoints[0].depth / self._setup.v_desc)
+            time_to_bottom = ceil(self._waypoints[0].depth / self._params.v_desc)
             self._waypoints.insert(0, Waypoint(depth=0, time=time_to_bottom, tank=self._waypoints[0].tank))
         self._waypoints[0].load_n2 = np.full(16, 0.79 * (1 - pw))
         self._waypoints[0].runtime = 0
@@ -181,31 +185,31 @@ class Profile:
 
         if self._waypoints[-1].depth > 0:
             if self._waypoints[-1].ceiling <= 0:
-                if self._safety_stop:
+                if self._params.safety_stop:
                     self._add_safety_stop()
                 else:
                     self._add_direct_ascent()
             else:
                 while self._waypoints[-1].ceiling > 0:
-                    stop_depth = math.ceil(self._waypoints[-1].ceiling / 3) * 3
+                    stop_depth = math.ceil(self._waypoints[-1].ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr
                     tank = self._select_gas(stop_depth)
-                    time_to_stop = ceil((self._waypoints[-1].depth - stop_depth) / self._setup.v_asc)
+                    time_to_stop = ceil((self._waypoints[-1].depth - stop_depth) / self._params.v_asc)
                     self._waypoints[-1].time = time_to_stop
                     self._waypoints.append(Waypoint(depth=stop_depth, time=1, tank=tank))
                     self._calculate_waypoint(len(self._waypoints) - 1)
 
                     tank = self._select_gas(stop_depth)
-                    time_to_stop = ceil(3 / self._setup.v_asc)
+                    time_to_stop = ceil(3 / self._params.v_asc)
                     self._waypoints.append(Waypoint(depth=stop_depth, time=time_to_stop, tank=tank))
                     self._calculate_waypoint(len(self._waypoints) - 1)
 
-                    while self._waypoints[-1].ceiling > (stop_depth - 3):
+                    while self._waypoints[-1].ceiling > (stop_depth - self._params.stop_depth_incr):
                         self._waypoints[-2].time = self._waypoints[-2].time + 1
                         self._calculate_waypoint(len(self._waypoints) - 2)
                         self._calculate_waypoint(len(self._waypoints) - 1)
 
                 tank = self._select_gas(0)
-                time_to_surface = ceil(self._waypoints[-1].depth / self._setup.v_asc)
+                time_to_surface = ceil(self._waypoints[-1].depth / self._params.v_asc)
                 self._waypoints[-1].time = time_to_surface
                 self._waypoints.append(Waypoint(depth=0, time=0, tank=tank))
                 self._calculate_waypoint(len(self._waypoints) - 1)
@@ -214,7 +218,7 @@ class Profile:
         cons = (self._waypoints[wp - 1].ata_depth + self._waypoints[wp].ata_depth) / 2
         cons = cons * self._waypoints[wp - 1].time
         start_press = self._tanks[self._waypoints[wp - 1].tank].pressure[wp - 1]
-        end_press = (start_press - (cons * self._setup.own_bottom_sac / self._tanks[self._waypoints[wp - 1].tank].size))
+        end_press = (start_press - (cons * self._params.own_bottom_sac / self._tanks[self._waypoints[wp - 1].tank].size))
         if (len(self._tanks[self._waypoints[wp - 1].tank].pressure) - 1) <= wp:
             self._tanks[self._waypoints[wp - 1].tank].pressure.append(math.floor(end_press))
         else:
@@ -255,7 +259,7 @@ class Profile:
 
     def _add_direct_ascent(self):
         if self._waypoints[-1].time < 0:
-            self._waypoints[-1].time = ceil(self._waypoints[-1].depth / self._setup.v_asc)
+            self._waypoints[-1].time = ceil(self._waypoints[-1].depth / self._params.v_asc)
 
         tank = self._select_gas(0)
         self._waypoints.append(Waypoint(depth=0, time=0, tank=tank))
@@ -263,14 +267,14 @@ class Profile:
 
     def _add_safety_stop(self):
         if self._waypoints[-1].time < 0:
-            self._waypoints[-1].time = ceil(self._waypoints[-1].depth / self._setup.v_asc)
+            self._waypoints[-1].time = ceil(self._waypoints[-1].depth / self._params.v_asc)
 
         tank = self._select_gas(5)
         self._waypoints.append(Waypoint(depth=5, time=3, tank=tank))
         self._calculate_waypoint(len(self._waypoints) - 1)
 
         tank = self._select_gas(5)
-        time_to_surface = ceil(self._waypoints[-1].depth / self._setup.v_asc)
+        time_to_surface = ceil(self._waypoints[-1].depth / self._params.v_asc)
         self._waypoints.append(Waypoint(depth=5, time=time_to_surface, tank=tank))
         self._calculate_waypoint(len(self._waypoints) - 1)
 
