@@ -9,8 +9,8 @@ tanks = [Tank(size=12, gas=Gas(o2=21), p_start=200),
          Tank(size=10, gas=Gas(o2=50), p_start=200)]
 
 # Create Waypoints
-waypoints = [Waypoint(depth=45, time=15),
-             Waypoint(depth=45)]
+waypoints = [Waypoint(depth=15, time=15),
+             Waypoint(depth=25)]
 
 # Create profile
 profile = Profile(setup=setup, tanks=tanks, waypoints=waypoints)
@@ -28,6 +28,6 @@ for k, w in profile.waypoints.items():
     ceiling.append(w.ceiling)
 
 plt.gca().invert_yaxis()
-plt.plot(runtime, depth, 'b')
-plt.plot(runtime, ceiling, 'r')
+plt.plot(runtime, depth, 'bo-')
+plt.plot(runtime, ceiling, 'rv--')
 plt.show()
