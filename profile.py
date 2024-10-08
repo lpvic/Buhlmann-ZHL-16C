@@ -2,6 +2,7 @@ import json
 import math
 from math import log, ceil
 from pathlib import Path
+from copy import deepcopy
 
 import numpy as np
 
@@ -161,11 +162,21 @@ class Profile:
         self._params = params
         self._tanks = tanks
         self._waypoints = waypoints
+        self._max_depth = 0.
+        self._depth = []
+        self._ceiling = []
+        self._runtime = []
+
+        for wp in self._waypoints:
+            if wp.depth > self._max_depth:
+                self._max_depth = wp.depth
 
         self._calculate_profile()
 
-    def add_waypoint(self, segment):
-        pass
+        for wp in self._waypoints:
+            self._depth.append(wp.depth)
+            self._ceiling.append(wp.ceiling)
+            self._runtime.append(wp.runtime)
 
     def _calculate_waypoint(self, wp):
         self._waypoints[wp].runtime = self._waypoints[wp - 1].runtime + self._waypoints[wp - 1].time
@@ -301,3 +312,15 @@ class Profile:
     @property
     def tanks(self):
         return dict(enumerate(self._tanks))
+
+    @property
+    def depth(self):
+        return deepcopy(self._depth)
+
+    @property
+    def ceiling(self):
+        return deepcopy(self._ceiling)
+
+    @property
+    def runtime(self):
+        return deepcopy(self._runtime)

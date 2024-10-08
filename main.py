@@ -23,11 +23,7 @@ for k, w in profile.waypoints.items():
     print(w.depth, w.runtime, w.time, w.tank, profile.tanks[w.tank].gas,
           [profile.tanks[t].pressure[k] for t in range(len(profile.tanks))], w.ceiling)
 
-    depth.append(w.depth)
-    runtime.append(w.runtime)
-    ceiling.append(w.ceiling)
-
 plt.gca().invert_yaxis()
-plt.plot(runtime, depth, 'bo-')
-plt.plot(runtime, ceiling, 'rv--')
+plt.plot(profile.runtime, profile.depth, 'bo-')
+plt.plot(profile.runtime, profile.ceiling, 'rv--')
 plt.show()
