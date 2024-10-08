@@ -3,14 +3,16 @@ from matplotlib import pyplot as plt
 
 # Initialize setup object
 params = Parameters()
+params.gf_low = 1
+params.gf_high = 1
 
 # Create tanks
 tanks = [Tank(size=12, gas=Gas(o2=21), p_start=200),
          Tank(size=10, gas=Gas(o2=50), p_start=200)]
 
 # Create Waypoints
-waypoints = [Waypoint(depth=15, time=15),
-             Waypoint(depth=25)]
+waypoints = [Waypoint(depth=45, time=15),
+             Waypoint(depth=45)]
 
 # Create profile
 profile = Profile(params=params, tanks=tanks, waypoints=waypoints)

@@ -162,14 +162,14 @@ class Profile:
         self._params = params
         self._tanks = tanks
         self._waypoints = waypoints
-        self._max_depth = 0.
+        self._max_depth_ata = 0.
         self._depth = []
         self._ceiling = []
         self._runtime = []
 
         for wp in self._waypoints:
-            if wp.depth > self._max_depth:
-                self._max_depth = wp.depth
+            if wp.ata_depth > self._max_depth_ata:
+                self._max_depth_ata = wp.ata_depth
 
         self._calculate_profile()
 
@@ -266,7 +266,13 @@ class Profile:
     def _calculate_ceilings(self, wp: int):
         a = ((a_n2 * self._waypoints[wp].load_n2 + a_he * self._waypoints[wp].load_he) / (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
         b = ((b_n2 * self._waypoints[wp].load_n2 + b_he * self._waypoints[wp].load_he) / (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
-        return (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he - a) * b
+        p_tol = (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he - a) * b
+        gf = self._params.gf_high - self._params.gf_low
+        gf = gf / (1. - self._max_depth_ata)
+        gf = gf * (self._waypoints[wp].ata_depth - 1.)
+        gf = gf + self._params.gf_high
+
+        return self._waypoints[wp].ata_depth - gf * (self._waypoints[wp].ata_depth - p_tol)
 
     def _add_direct_ascent(self):
         if self._waypoints[-1].time < 0:
@@ -301,9 +307,6 @@ class Profile:
                 tank = self._tanks.index(t)
 
         return tank
-
-    def _add_deco_stops(self):
-        pass
 
     @property
     def waypoints(self):
