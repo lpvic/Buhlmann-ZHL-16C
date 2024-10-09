@@ -186,7 +186,7 @@ class Profile:
 
     def _calculate_profile(self):
         if self._waypoints[0].depth != 0:
-            time_to_bottom = ceil(self._waypoints[0].depth / self._params.v_desc)
+            time_to_bottom = self._waypoints[0].depth / self._params.v_desc
             self._waypoints.insert(0, Waypoint(depth=0, time=time_to_bottom, tank=self._waypoints[0].tank))
         self._waypoints[0].load_n2 = np.full(16, 0.79 * (1 - pw))
         self._waypoints[0].runtime = 0
@@ -266,13 +266,17 @@ class Profile:
     def _calculate_ceilings(self, wp: int):
         a = ((a_n2 * self._waypoints[wp].load_n2 + a_he * self._waypoints[wp].load_he) / (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
         b = ((b_n2 * self._waypoints[wp].load_n2 + b_he * self._waypoints[wp].load_he) / (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
-        p_tol = (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he - a) * b
+        p_comp = self._waypoints[wp].load_n2 + self._waypoints[wp].load_he
+        p_tol = (p_comp - a) * b
         gf = self._params.gf_high - self._params.gf_low
         gf = gf / (1. - self._max_depth_ata)
         gf = gf * (self._waypoints[wp].ata_depth - 1.)
         gf = gf + self._params.gf_high
+        out1 = self._waypoints[wp].ata_depth - gf * (self._waypoints[wp].ata_depth - p_tol)
+        out2 = (p_comp - (a * gf))
+        out2 = out2 / ((gf / b) - gf + 1.)
 
-        return self._waypoints[wp].ata_depth - gf * (self._waypoints[wp].ata_depth - p_tol)
+        return out2
 
     def _add_direct_ascent(self):
         if self._waypoints[-1].time < 0:
