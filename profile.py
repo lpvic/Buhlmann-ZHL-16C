@@ -1,26 +1,27 @@
 import json
-import math
 from math import log, ceil
 from pathlib import Path
 from copy import deepcopy
+from collections import namedtuple
+from matplotlib import pyplot as plt
 
 import numpy as np
 
+# Coefficients for Bühlmann ZH-L16C
 h_n2 = np.array([5.0, 8.0, 12.5, 18.5, 27.0, 38.3, 54.3, 77.0, 109.0, 146.0, 187.0, 239.0, 305.0, 390.0, 498.0, 635.0])
-a_n2 = np.array([1.1696, 1.0000, 0.8618, 0.7562, 0.6200, 0.5043, 0.4410, 0.4000, 0.3750, 0.3500, 0.3295, 0.3065, 0.2835, 0.2610, 0.2480, 0.2327])
-b_n2 = np.array([0.5578, 0.6514, 0.7222, 0.7825, 0.8126, 0.8434, 0.8693, 0.8910, 0.9092, 0.9222, 0.9319, 0.9403, 0.9477, 0.9544, 0.9602, 0.9653])
-h_he = np.array([1.88, 3.02, 4.72, 6.99, 10.21, 14.48, 20.53, 29.11, 41.20, 55.19, 70.69, 90.34, 115.29, 147.42, 188.24, 240.03])
-a_he = np.array([1.6189, 1.3830, 1.1919, 1.0458, 0.9220, 0.8205, 0.7305, 0.6502, 0.5950, 0.5545, 0.5333, 0.5189, 0.5181, 0.5176, 0.5172, 0.5119])
-b_he = np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553, 0.8757, 0.8903, 0.8997, 0.9073, 0.9122, 0.9171, 0.9217, 0.9267])
+a_n2 = np.array([1.1696, 1.0000, 0.8618, 0.7562, 0.6200, 0.5043, 0.4410, 0.4000, 0.3750, 0.3500, 0.3295, 0.3065, 0.2835,
+                 0.2610, 0.2480, 0.2327])
+b_n2 = np.array([0.5578, 0.6514, 0.7222, 0.7825, 0.8126, 0.8434, 0.8693, 0.8910, 0.9092, 0.9222, 0.9319, 0.9403, 0.9477,
+                 0.9544, 0.9602, 0.9653])
+h_he = np.array([1.88, 3.02, 4.72, 6.99, 10.21, 14.48, 20.53, 29.11, 41.20, 55.19, 70.69, 90.34, 115.29, 147.42, 188.24,
+                 240.03])
+a_he = np.array([1.6189, 1.3830, 1.1919, 1.0458, 0.9220, 0.8205, 0.7305, 0.6502, 0.5950, 0.5545, 0.5333, 0.5189, 0.5181,
+                 0.5176, 0.5172, 0.5119])
+b_he = np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553, 0.8757, 0.8903, 0.8997, 0.9073, 0.9122,
+                 0.9171, 0.9217, 0.9267])
 pw = 0.0567
 
-
-def schreiner_equation(pi: float | np.ndarray, p0: float | np.ndarray, r: float, t: float, k: float | np.ndarray) -> float:
-    out = pi
-    out = out + r * (t - (1 / k))
-    out = out - (pi - p0 - (r / k)) * np.exp(-k * t)
-
-    return out
+Waypoint = namedtuple('Waypoint', 'depth duration runtime')
 
 
 class IncorrectGasMixture(Exception):
@@ -46,6 +47,8 @@ class Parameters:
         self.calc_ascent = True
         self.deco_stops = True
         self.safety_stop = True
+
+        self.dt = 10. / 60.
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
@@ -79,23 +82,25 @@ class Gas:
     def O2(self) -> int:
         return self._O2
 
-    @O2.setter
-    def O2(self, v: int) -> None:
-        self._O2 = v
-        self._N2 = 100 - self._O2 - self._He
-
     @property
     def He(self) -> int:
         return self._He
 
-    @He.setter
-    def He(self, v: int):
-        self._He = v
-        self._N2 = 100 - self._O2 - self._He
-
     @property
     def N2(self) -> int:
         return self._N2
+
+    @property
+    def fO2(self) -> float:
+        return self._O2 / 100.
+
+    @property
+    def fN2(self) -> float:
+        return self._N2 / 100.
+
+    @property
+    def fHe(self) -> float:
+        return self._He / 100.
 
     def __str__(self) -> str:
         if (self._O2 == 21) and (self._He == 0):
@@ -124,7 +129,7 @@ class Tank:
         return self._size
 
 
-class Waypoint:
+class Point:
     def __init__(self, depth: float, time: int = -1, tank: int = 0) -> None:
         self._depth = depth
         self._tank = tank
@@ -135,199 +140,90 @@ class Waypoint:
         self.ceilings = np.ones(16)
 
     @property
-    def ata_depth(self):
-        return (self._depth / 10) + 1
+    def ata_depth(self) -> float:
+        return (self._depth / 10.) + 1.
 
     @property
-    def depth(self):
+    def depth(self) -> float:
         return self._depth
 
     @property
-    def tank(self):
+    def tank(self) -> int:
         return self._tank
 
     @property
-    def ceiling(self):
+    def ceiling(self) -> float:
         if np.max(self.ceilings) > 1.:
-            return (np.max(self.ceilings) - 1) * 10
+            return (np.max(self.ceilings) - 1.) * 10.
         else:
             return 0.
 
-    def __str__(self):
+    def __str__(self) -> str:
         return ' '.join([str(self.depth), str(self.runtime), str(self.time), str(self.tank), str(self.ceiling)])
 
 
 class Profile:
-    def __init__(self, params: Parameters, tanks: list[Tank], waypoints: list[Waypoint]) -> None:
+    def __init__(self, waypoints: list[Waypoint], tanks: list[Tank],
+                 params: Parameters = Parameters()) -> None:
         self._params = params
         self._tanks = tanks
-        self._waypoints = waypoints
+        self._waypoints = []
         self._max_depth_ata = 0.
         self._depth = []
         self._ceiling = []
         self._runtime = []
+        self._points = []
 
-        for wp in self._waypoints:
-            if wp.ata_depth > self._max_depth_ata:
-                self._max_depth_ata = wp.ata_depth
-
-        self._calculate_profile()
-
-        for wp in self._waypoints:
-            self._depth.append(wp.depth)
-            self._ceiling.append(wp.ceiling)
-            self._runtime.append(wp.runtime)
-
-    def _calculate_waypoint(self, wp):
-        self._waypoints[wp].runtime = self._waypoints[wp - 1].runtime + self._waypoints[wp - 1].time
-        self._calculate_gas(wp)
-        self._waypoints[wp].load_n2, self._waypoints[wp].load_he = self._calculate_compartments(wp)
-        self._waypoints[wp].ceilings = self._calculate_ceilings(wp)
-
-    def _calculate_profile(self):
-        if self._waypoints[0].depth != 0:
-            time_to_bottom = self._waypoints[0].depth / self._params.v_desc
-            self._waypoints.insert(0, Waypoint(depth=0, time=time_to_bottom, tank=self._waypoints[0].tank))
-        self._waypoints[0].load_n2 = np.full(16, 0.79 * (1 - pw))
-        self._waypoints[0].runtime = 0
-
-        for wp in range(1, len(self._waypoints)):
-            self._calculate_waypoint(wp)
-
-        if self._waypoints[-1].depth > 0:
-            if self._waypoints[-1].ceiling <= 0:
-                if self._params.safety_stop:
-                    self._add_safety_stop()
-                else:
-                    self._add_direct_ascent()
-            else:
-                while self._waypoints[-1].ceiling > 0:
-                    stop_depth = math.ceil(self._waypoints[-1].ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr
-                    tank = self._select_gas(stop_depth)
-                    time_to_stop = ceil((self._waypoints[-1].depth - stop_depth) / self._params.v_asc)
-                    self._waypoints[-1].time = time_to_stop
-                    self._waypoints.append(Waypoint(depth=stop_depth, time=1, tank=tank))
-                    self._calculate_waypoint(len(self._waypoints) - 1)
-
-                    tank = self._select_gas(stop_depth)
-                    time_to_stop = ceil(3 / self._params.v_asc)
-                    self._waypoints.append(Waypoint(depth=stop_depth, time=time_to_stop, tank=tank))
-                    self._calculate_waypoint(len(self._waypoints) - 1)
-
-                    while self._waypoints[-1].ceiling > (stop_depth - self._params.stop_depth_incr):
-                        self._waypoints[-2].time = self._waypoints[-2].time + 1
-                        self._calculate_waypoint(len(self._waypoints) - 2)
-                        self._calculate_waypoint(len(self._waypoints) - 1)
-
-                tank = self._select_gas(0)
-                time_to_surface = ceil(self._waypoints[-1].depth / self._params.v_asc)
-                self._waypoints[-1].time = time_to_surface
-                self._waypoints.append(Waypoint(depth=0, time=0, tank=tank))
-                self._calculate_waypoint(len(self._waypoints) - 1)
-
-    def _calculate_gas(self, wp: int):
-        cons = (self._waypoints[wp - 1].ata_depth + self._waypoints[wp].ata_depth) / 2
-        cons = cons * self._waypoints[wp - 1].time
-        start_press = self._tanks[self._waypoints[wp - 1].tank].pressure[wp - 1]
-        end_press = (start_press - (cons * self._params.own_bottom_sac / self._tanks[self._waypoints[wp - 1].tank].size))
-        if (len(self._tanks[self._waypoints[wp - 1].tank].pressure) - 1) <= wp:
-            self._tanks[self._waypoints[wp - 1].tank].pressure.append(math.floor(end_press))
+        if waypoints[0].depth != 0:
+            time_to_bottom = waypoints[0].depth / self._params.v_desc
+            self._waypoints.append(Waypoint(0, time_to_bottom, 0))
+            self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, self._waypoints[0].duration))
         else:
-            self._tanks[self._waypoints[wp - 1].tank].pressure[wp] = math.floor(end_press)
+            self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, 0))
 
-        for cyl in range(len(self._tanks)):
-            if cyl != self._waypoints[wp - 1].tank:
-                if (len(self._tanks[cyl].pressure) - 1) <= wp:
-                    self._tanks[cyl].pressure.append(self._tanks[cyl].pressure[wp - 1])
-                else:
-                    self._tanks[cyl].pressure[wp] = self._tanks[cyl].pressure[wp - 1]
+        for idx, wp in enumerate(waypoints[1:], start=1):
+            prev_wp = self._waypoints[-1]
 
-    def _calculate_compartments(self, wp: int):
-        depth_ata = (self._waypoints[wp].depth / 10) + 1
+            if wp.depth > prev_wp.depth:
+                desc_time = (wp.depth - prev_wp.depth) / self._params.v_desc
+                self._waypoints.append(Waypoint(prev_wp.depth, desc_time, prev_wp.runtime + prev_wp.duration))
+            elif wp.depth < prev_wp.depth:
+                asc_time = (prev_wp.depth - wp.depth) / self._params.v_asc
+                self._waypoints.append(Waypoint(prev_wp.depth, asc_time, prev_wp.runtime + prev_wp.duration))
 
-        # Nitrogen first
-        p0 = self._waypoints[wp - 1].load_n2
-        f_n2 = self._tanks[self._waypoints[wp - 1].tank].gas.N2 / 100
-        pi_n2 = np.full(16, f_n2 * (depth_ata - pw))
-        r_n2 = (((self._waypoints[wp].depth - self._waypoints[wp - 1].depth) / self._waypoints[wp - 1].time) * f_n2) / 10
-        k_n2 = log(2) / h_n2
-        load_n2 = schreiner_equation(pi_n2, p0, r_n2, self._waypoints[wp - 1].time, k_n2)
-
-        # Helium next
-        p0 = self._waypoints[wp - 1].load_he
-        f_he = self._tanks[self._waypoints[wp - 1].tank].gas.He / 100
-        pi_he = np.full(16, f_he * (depth_ata - pw))
-        r_he = (((self._waypoints[wp].depth - self._waypoints[wp - 1].depth) / self._waypoints[wp - 1].time) * f_he) / 10
-        k_he = log(2) / h_he
-        load_he = schreiner_equation(pi_he, p0, r_he, self._waypoints[wp - 1].time, k_he)
-
-        return load_n2, load_he
-
-    def _calculate_ceilings(self, wp: int):
-        a = ((a_n2 * self._waypoints[wp].load_n2 + a_he * self._waypoints[wp].load_he) / (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
-        b = ((b_n2 * self._waypoints[wp].load_n2 + b_he * self._waypoints[wp].load_he) / (self._waypoints[wp].load_n2 + self._waypoints[wp].load_he))
-        p_comp = self._waypoints[wp].load_n2 + self._waypoints[wp].load_he
-        p_tol = (p_comp - a) * b
-        gf = self._params.gf_high - self._params.gf_low
-        gf = gf / (1. - self._max_depth_ata)
-        gf = gf * (self._waypoints[wp].ata_depth - 1.)
-        gf = gf + self._params.gf_high
-        out1 = self._waypoints[wp].ata_depth - gf * (self._waypoints[wp].ata_depth - p_tol)
-        out2 = (p_comp - (a * gf))
-        out2 = out2 / ((gf / b) - gf + 1.)
-
-        return out2
-
-    def _add_direct_ascent(self):
-        if self._waypoints[-1].time < 0:
-            self._waypoints[-1].time = ceil(self._waypoints[-1].depth / self._params.v_asc)
-
-        tank = self._select_gas(0)
-        self._waypoints.append(Waypoint(depth=0, time=0, tank=tank))
-        self._calculate_waypoint(len(self._waypoints) - 1)
-
-    def _add_safety_stop(self):
-        if self._waypoints[-1].time < 0:
-            self._waypoints[-1].time = ceil(self._waypoints[-1].depth / self._params.v_asc)
-
-        tank = self._select_gas(5)
-        self._waypoints.append(Waypoint(depth=5, time=3, tank=tank))
-        self._calculate_waypoint(len(self._waypoints) - 1)
-
-        tank = self._select_gas(5)
-        time_to_surface = ceil(self._waypoints[-1].depth / self._params.v_asc)
-        self._waypoints.append(Waypoint(depth=5, time=time_to_surface, tank=tank))
-        self._calculate_waypoint(len(self._waypoints) - 1)
-
-        tank = self._select_gas(0)
-        self._waypoints.append(Waypoint(depth=0, time=0, tank=tank))
-        self._calculate_waypoint(len(self._waypoints) - 1)
-
-    def _select_gas(self, depth):
-        tank = 0
-        max_o2 = 0
-        for t in self._tanks:
-            if (t.gas.O2 > max_o2) and (t.gas.mod(pp_o2=1.6) > depth):
-                tank = self._tanks.index(t)
-
-        return tank
+            prev_wp = self._waypoints[-1]
+            if idx == (len(waypoints) - 1):
+                duration = 0
+            else:
+                duration = wp.duration
+            self._waypoints.append(Waypoint(wp.depth, duration, prev_wp.runtime + prev_wp.duration))
 
     @property
     def waypoints(self):
-        return dict(enumerate(self._waypoints))
+        return self._waypoints
 
-    @property
-    def tanks(self):
-        return dict(enumerate(self._tanks))
+    @staticmethod
+    def _schreiner(pi: float | np.ndarray, p0: float | np.ndarray, r: float, t: float, k: float | np.ndarray) -> float:
+        out = pi
+        out = out + r * (t - (1 / k))
+        out = out - (pi - p0 - (r / k)) * np.exp(-k * t)
 
-    @property
-    def depth(self):
-        return deepcopy(self._depth)
+        return out
 
-    @property
-    def ceiling(self):
-        return deepcopy(self._ceiling)
+    @staticmethod
+    def _interpolate(wp_0: Waypoint, wp_1: Waypoint, runtime: float):
+        out = (wp_1.depth - wp_0.depth) / (wp_1.runtime - wp_0.runtime)
+        out = out * (runtime - wp_0.runtime)
+        out = out + wp_0.depth
 
-    @property
-    def runtime(self):
-        return deepcopy(self._runtime)
+        return out
+
+    def plot(self):
+        depth = []
+        runtime = []
+        for wp in self._waypoints:
+            depth.append(wp.depth)
+            runtime.append(wp.runtime)
+        plt.gca().invert_yaxis()
+        plt.plot(runtime, depth, 'bo-')
+        plt.show()
