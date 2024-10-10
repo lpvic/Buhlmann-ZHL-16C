@@ -4,6 +4,7 @@ from pathlib import Path
 from copy import deepcopy
 from collections import namedtuple
 from matplotlib import pyplot as plt
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -21,34 +22,34 @@ b_he = np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553,
                  0.9171, 0.9217, 0.9267])
 pw = 0.0567
 
-Waypoint = namedtuple('Waypoint', 'depth duration runtime')
+Waypoint = namedtuple('Waypoint', 'depth duration runtime', defaults=[0, 0, 0])
 
 
 class IncorrectGasMixture(Exception):
     pass
 
 
+@dataclass
 class Parameters:
-    def __init__(self) -> None:
-        self.last_stop_depth = 6
-        self.stop_depth_incr = 3
+    last_stop_depth = 6
+    stop_depth_incr = 3
 
-        self.v_asc = 9
-        self.v_desc = 20
+    v_asc = 10
+    v_desc = 20
 
-        self.own_descent_sac = 20
-        self.own_bottom_sac = 20
-        self.own_ascent_sac = 17
-        self.buddy_ascent_sac = 17
+    own_descent_sac = 20
+    own_bottom_sac = 20
+    own_ascent_sac = 17
+    buddy_ascent_sac = 17
 
-        self.gf_high = 1.
-        self.gf_low = 1.
+    gf_high = 1.
+    gf_low = 1.
 
-        self.calc_ascent = True
-        self.deco_stops = True
-        self.safety_stop = True
+    calc_ascent = True
+    deco_stops = True
+    safety_stop = True
 
-        self.dt = 10. / 60.
+    dt = 10. / 60.
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
@@ -174,6 +175,9 @@ class Profile:
         self._runtime = []
         self._points = []
 
+        self._complete_waypoints(waypoints)
+
+    def _complete_waypoints(self, waypoints):
         if waypoints[0].depth != 0:
             time_to_bottom = waypoints[0].depth / self._params.v_desc
             self._waypoints.append(Waypoint(0, time_to_bottom, 0))
