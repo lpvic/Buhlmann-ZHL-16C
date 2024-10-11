@@ -7,17 +7,23 @@ from dataclasses import dataclass
 import numpy as np
 
 # Coefficients for Bühlmann ZH-L16C
-h_n2 = np.array([5.0, 8.0, 12.5, 18.5, 27.0, 38.3, 54.3, 77.0, 109.0, 146.0, 187.0, 239.0, 305.0, 390.0, 498.0, 635.0])
-a_n2 = np.array([1.1696, 1.0000, 0.8618, 0.7562, 0.6200, 0.5043, 0.4410, 0.4000, 0.3750, 0.3500, 0.3295, 0.3065, 0.2835,
-                 0.2610, 0.2480, 0.2327])
-b_n2 = np.array([0.5578, 0.6514, 0.7222, 0.7825, 0.8126, 0.8434, 0.8693, 0.8910, 0.9092, 0.9222, 0.9319, 0.9403, 0.9477,
-                 0.9544, 0.9602, 0.9653])
-h_he = np.array([1.88, 3.02, 4.72, 6.99, 10.21, 14.48, 20.53, 29.11, 41.20, 55.19, 70.69, 90.34, 115.29, 147.42, 188.24,
-                 240.03])
-a_he = np.array([1.6189, 1.3830, 1.1919, 1.0458, 0.9220, 0.8205, 0.7305, 0.6502, 0.5950, 0.5545, 0.5333, 0.5189, 0.5181,
-                 0.5176, 0.5172, 0.5119])
-b_he = np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553, 0.8757, 0.8903, 0.8997, 0.9073, 0.9122,
-                 0.9171, 0.9217, 0.9267])
+ZH_L16 = {
+    'C': {
+        'N2': {
+            'ht': np.array([5.0, 8.0, 12.5, 18.5, 27.0, 38.3, 54.3, 77.0, 109.0, 146.0, 187.0, 239.0, 305.0, 390.0,
+                            498.0, 635.0]),
+            'a': np.array([1.1696, 1.0000, 0.8618, 0.7562, 0.6200, 0.5043, 0.4410, 0.4000, 0.3750, 0.3500, 0.3295,
+                           0.3065, 0.2835, 0.2610, 0.2480, 0.2327]),
+            'b': np.array([0.5578, 0.6514, 0.7222, 0.7825, 0.8126, 0.8434, 0.8693, 0.8910, 0.9092, 0.9222, 0.9319,
+                           0.9403, 0.9477, 0.9544, 0.9602, 0.9653])},
+        'He': {
+            'ht': np.array([1.88, 3.02, 4.72, 6.99, 10.21, 14.48, 20.53, 29.11, 41.20, 55.19, 70.69, 90.34, 115.29,
+                            147.42, 188.24, 240.03]),
+            'a': np.array([1.6189, 1.3830, 1.1919, 1.0458, 0.9220, 0.8205, 0.7305, 0.6502, 0.5950, 0.5545, 0.5333,
+                           0.5189, 0.5181, 0.5176, 0.5172, 0.5119]),
+            'b': np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553, 0.8757, 0.8903, 0.8997,
+                           0.9073, 0.9122, 0.9171, 0.9217, 0.9267])}}}
+
 pw = 0.0567
 
 
@@ -198,8 +204,7 @@ class IntegrationPoint:
     def __init__(self, waypoint: Waypoint, tank: int) -> None:
         self.waypoint = waypoint
         self.tank = tank
-        self.load_n2 = np.full(16, 0.79 * (1 - pw))
-        self.load_he = np.zeros(16)
+        self.load_ig = {'N2': np.full(16, 0.79 * (1 - pw)), 'He': np.zeros(16)}
         self.ceilings = np.ones(16)
 
     @property
@@ -236,7 +241,8 @@ class Profile:
                 while t <= (wp.runtime.seconds + wp.duration.seconds):
                     new_wp = Waypoint(self._interpolate_depth(Time(t, 's')), self._params.dt, Time(t, 's'))
                     new_ip = IntegrationPoint(new_wp, self._select_tank(new_wp.depth))
-                    new_ip.load_n2, new_ip.load_he = self._calculate_compartments(new_ip)
+                    prev_ip = self._integration_points[-1] if self._integration_points else new_ip
+                    new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
                     self._integration_points.append(new_ip)
                     t = t + self._params.dt.seconds
 
@@ -267,30 +273,25 @@ class Profile:
                 duration = wp.duration
             self._waypoints.append(Waypoint(wp.depth, duration, prev_wp.runtime.minutes + prev_wp.duration.minutes))
 
-    def _calculate_compartments(self, ip: IntegrationPoint):
-        if self.integration_points:
-            prev_ip = self._integration_points[-1]
-            p_amb = ip.p_amb
+    def _calculate_compartments(self, ip: IntegrationPoint, prev_ip: IntegrationPoint):
+        out = {}
+        p_amb = ip.p_amb
 
-            # Nitrogen first
-            p0 = prev_ip.load_n2
-            f_n2 = self._tanks[prev_ip.tank].gas.N2 / 100
-            pi_n2 = np.full(16, f_n2 * (p_amb - pw))
-            r_n2 = (((ip.waypoint.depth - prev_ip.waypoint.depth) / prev_ip.waypoint.duration.minutes) * f_n2) / 10
-            k_n2 = log(2) / h_n2
-            load_n2 = self._schreiner_eq(pi_n2, p0, r_n2, prev_ip.waypoint.duration.minutes, k_n2)
+        for g in ['N2', 'He']:
+            p0 = prev_ip.load_ig[g]
+            f_ig = self._tanks[prev_ip.tank].gas.fN2 if g == 'N2' else self._tanks[prev_ip.tank].gas.fHe
+            pi = np.full(16, f_ig * (p_amb - pw))
+            r = (((ip.waypoint.depth - prev_ip.waypoint.depth) / prev_ip.waypoint.duration.minutes) * f_ig) / 10
+            k = log(2) / ZH_L16['C'][g]['ht']
 
-            # Helium next
-            p0 = prev_ip.load_he
-            f_he = self._tanks[prev_ip.tank].gas.He / 100
-            pi_he = np.full(16, f_he * (p_amb - pw))
-            r_he = (((ip.waypoint.depth - prev_ip.waypoint.depth) / prev_ip.waypoint.duration.minutes) * f_he) / 10
-            k_he = log(2) / h_he
-            load_he = self._schreiner_eq(pi_he, p0, r_he, prev_ip.waypoint.duration.minutes, k_he)
+            # Schreiner equation
+            p_ig = pi
+            p_ig = p_ig + r * (prev_ip.waypoint.duration.minutes - (1 / k))
+            p_ig = p_ig - (pi - p0 - (r / k)) * np.exp(-k * prev_ip.waypoint.duration.minutes)
 
-            return load_n2, load_he
-        else:
-            return ip.load_n2, ip.load_he
+            out[g] = p_ig
+
+        return out
 
     def _calculate_ceiling(self, ip: IntegrationPoint):
         pass

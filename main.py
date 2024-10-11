@@ -1,10 +1,7 @@
 from profile import *
-from matplotlib import pyplot as plt
 
 # Initialize setup object
-params = Parameters()
-params.gf_low = 0.3
-params.gf_high = .75
+params = Parameters(gf_low=1., gf_high=1.)
 
 # Create tanks
 tanks = [Tank(size=12, gas=Gas(o2=21), p_start=200),
