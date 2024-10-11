@@ -1,8 +1,6 @@
 import json
-from math import log, ceil, floor
+from math import floor, log
 from pathlib import Path
-from copy import deepcopy
-from collections import namedtuple
 from matplotlib import pyplot as plt
 from dataclasses import dataclass
 
@@ -88,7 +86,9 @@ class Parameters:
     deco_stops: bool = True
     safety_stop: bool = True
 
-    dt: Time = Time(time=1, unit='s')
+    gas_switch = 'depth'  # 'depth' | 'stop'
+
+    dt: Time = Time(time=5, unit='s')
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
@@ -194,27 +194,17 @@ class Waypoint:
                 .format(depth=self.depth, duration=self.duration, runtime=self.runtime))
 
 
-class Point:
-    def __init__(self, depth: float, tank: int = 0) -> None:
-        self._depth = depth
-        self._tank = tank
-
-        self.runtime = 0
-        self.load_n2 = np.zeros(16)
+class IntegrationPoint:
+    def __init__(self, waypoint: Waypoint, tank: int) -> None:
+        self.waypoint = waypoint
+        self.tank = tank
+        self.load_n2 = np.full(16, 0.79 * (1 - pw))
         self.load_he = np.zeros(16)
         self.ceilings = np.ones(16)
 
     @property
     def p_amb(self) -> float:
-        return (self._depth / 10.) + 1.
-
-    @property
-    def depth(self) -> float:
-        return self._depth
-
-    @property
-    def tank(self) -> int:
-        return self._tank
+        return (self.waypoint.depth / 10.) + 1.
 
     @property
     def ceiling(self) -> float:
@@ -223,12 +213,18 @@ class Point:
         else:
             return 0.
 
+    def __str__(self):
+        return ('IntegrationPoint(depth={depth:.1f}, duration={duration}, runtime={runtime}, tank={tank})'
+                .format(depth=self.waypoint.depth, duration=self.waypoint.duration, runtime=self.waypoint.runtime,
+                        tank=self.tank))
+
 
 class Profile:
     def __init__(self, waypoints: list[Waypoint], tanks: list[Tank], params: Parameters = Parameters()) -> None:
         self._params: Parameters = params
         self._tanks: list[Tank] = tanks
         self._waypoints: list[Waypoint] = []
+        self._integration_points: list[IntegrationPoint] = []
 
         self._complete_waypoints(waypoints)
 
@@ -238,7 +234,10 @@ class Profile:
                 continue
             else:
                 while t <= (wp.runtime.seconds + wp.duration.seconds):
-                    print(idx, Waypoint(self._interpolate_depth(Time(t, 's')), self._params.dt, Time(t, 's')))
+                    new_wp = Waypoint(self._interpolate_depth(Time(t, 's')), self._params.dt, Time(t, 's'))
+                    new_ip = IntegrationPoint(new_wp, self._select_tank(new_wp.depth))
+                    new_ip.load_n2, new_ip.load_he = self._calculate_compartments(new_ip)
+                    self._integration_points.append(new_ip)
                     t = t + self._params.dt.seconds
 
     def _complete_waypoints(self, waypoints: list[Waypoint]) -> None:
@@ -254,10 +253,12 @@ class Profile:
 
             if wp.depth > prev_wp.depth:
                 desc_time = Time((wp.depth - prev_wp.depth) / self._params.v_desc)
-                self._waypoints.append(Waypoint(prev_wp.depth, desc_time, prev_wp.runtime.minutes + prev_wp.duration.minutes))
+                self._waypoints.append(Waypoint(prev_wp.depth, desc_time,
+                                                prev_wp.runtime.minutes + prev_wp.duration.minutes))
             elif wp.depth < prev_wp.depth:
                 asc_time = Time((prev_wp.depth - wp.depth) / self._params.v_asc)
-                self._waypoints.append(Waypoint(prev_wp.depth, asc_time, prev_wp.runtime.minutes + prev_wp.duration.minutes))
+                self._waypoints.append(Waypoint(prev_wp.depth, asc_time,
+                                                prev_wp.runtime.minutes + prev_wp.duration.minutes))
 
             prev_wp = self._waypoints[-1]
             if idx == (len(waypoints) - 1):
@@ -266,17 +267,59 @@ class Profile:
                 duration = wp.duration
             self._waypoints.append(Waypoint(wp.depth, duration, prev_wp.runtime.minutes + prev_wp.duration.minutes))
 
+    def _calculate_compartments(self, ip: IntegrationPoint):
+        if self.integration_points:
+            prev_ip = self._integration_points[-1]
+            p_amb = ip.p_amb
+
+            # Nitrogen first
+            p0 = prev_ip.load_n2
+            f_n2 = self._tanks[prev_ip.tank].gas.N2 / 100
+            pi_n2 = np.full(16, f_n2 * (p_amb - pw))
+            r_n2 = (((ip.waypoint.depth - prev_ip.waypoint.depth) / prev_ip.waypoint.duration.minutes) * f_n2) / 10
+            k_n2 = log(2) / h_n2
+            load_n2 = self._schreiner_eq(pi_n2, p0, r_n2, prev_ip.waypoint.duration.minutes, k_n2)
+
+            # Helium next
+            p0 = prev_ip.load_he
+            f_he = self._tanks[prev_ip.tank].gas.He / 100
+            pi_he = np.full(16, f_he * (p_amb - pw))
+            r_he = (((ip.waypoint.depth - prev_ip.waypoint.depth) / prev_ip.waypoint.duration.minutes) * f_he) / 10
+            k_he = log(2) / h_he
+            load_he = self._schreiner_eq(pi_he, p0, r_he, prev_ip.waypoint.duration.minutes, k_he)
+
+            return load_n2, load_he
+        else:
+            return ip.load_n2, ip.load_he
+
+    def _calculate_ceiling(self, ip: IntegrationPoint):
+        pass
+
     @property
     def waypoints(self) -> list[Waypoint]:
         return self._waypoints
 
+    @property
+    def integration_points(self) -> list[IntegrationPoint]:
+        return self._integration_points
+
     @staticmethod
-    def _schreiner(pi: float | np.ndarray, p0: float | np.ndarray, r: float, t: float, k: float | np.ndarray) -> float:
+    def _schreiner_eq(pi: float | np.ndarray, p0: float | np.ndarray, r: float,
+                      t: float, k: float | np.ndarray) -> float:
         out = pi
         out = out + r * (t - (1 / k))
         out = out - (pi - p0 - (r / k)) * np.exp(-k * t)
 
         return out
+
+    def _select_tank(self, depth: float):
+        tank = 0
+        max_o2 = 0
+        for t in self._tanks:
+            if (t.gas.O2 > max_o2) and (t.gas.mod(pp_o2=1.6) > depth):
+                tank = self._tanks.index(t)
+
+        return tank
 
     def _interpolate_depth(self, runtime: Time) -> float:
         wp_0 = None
@@ -299,7 +342,7 @@ class Profile:
 
         return out
 
-    def plot(self):
+    def plot_waypoints(self):
         depth = []
         runtime = []
         for wp in self._waypoints:
@@ -307,4 +350,14 @@ class Profile:
             runtime.append(wp.runtime.seconds)
         plt.gca().invert_yaxis()
         plt.plot(runtime, depth, 'bo-')
+        plt.show()
+
+    def plot_integration_points(self):
+        depth = []
+        runtime = []
+        for ip in self._integration_points:
+            depth.append(ip.waypoint.depth)
+            runtime.append(ip.waypoint.runtime.seconds)
+        plt.gca().invert_yaxis()
+        plt.plot(runtime, depth, 'bo-', markersize=2)
         plt.show()

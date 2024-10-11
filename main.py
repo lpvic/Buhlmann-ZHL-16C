@@ -16,7 +16,7 @@ waypoints = [Waypoint(45, 15), Waypoint(15, 10), Waypoint(45, 0)]
 # Create profile
 profile = Profile(waypoints=waypoints, tanks=tanks, params=params)
 
-for wp in profile.waypoints:
-    print(wp)
+for ip in profile.integration_points:
+    print(ip)
 
-profile.plot()
+profile.plot_integration_points()
