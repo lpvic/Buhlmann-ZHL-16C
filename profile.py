@@ -31,6 +31,10 @@ class IncorrectTimeUnit(Exception):
     pass
 
 
+class InterpolationError(Exception):
+    pass
+
+
 class Time:
     def __init__(self, time: float | int, unit='m'):
         self._unit = unit
@@ -84,7 +88,7 @@ class Parameters:
     deco_stops: bool = True
     safety_stop: bool = True
 
-    dt: Time = Time(time=10, unit='s')
+    dt: Time = Time(time=1, unit='s')
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
@@ -167,7 +171,7 @@ class Tank:
 
 class Waypoint:
     def __init__(self, depth: float = 0., duration: float | Time = None, runtime: float | Time = None) -> None:
-        self.depth = depth
+        self.depth: float = depth / 1.
         self.duration: Time
         self.runtime: Time
 
@@ -186,22 +190,22 @@ class Waypoint:
             self.runtime = Time(runtime)
 
     def __str__(self) -> str:
-        return ('Waypoint(depth={depth}m, duration={duration}{ud}, runtime={runtime}{ur})'
-                .format(depth=self.depth, duration=self.duration, ud=self.duration.unit, runtime=self.runtime, ur=self.runtime.unit))
+        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime})'
+                .format(depth=self.depth, duration=self.duration, runtime=self.runtime))
 
 
 class Point:
-    def __init__(self, depth: float, time: int = -1, tank: int = 0) -> None:
+    def __init__(self, depth: float, tank: int = 0) -> None:
         self._depth = depth
         self._tank = tank
-        self.time = time
+
         self.runtime = 0
         self.load_n2 = np.zeros(16)
         self.load_he = np.zeros(16)
         self.ceilings = np.ones(16)
 
     @property
-    def ata_depth(self) -> float:
+    def p_amb(self) -> float:
         return (self._depth / 10.) + 1.
 
     @property
@@ -219,22 +223,23 @@ class Point:
         else:
             return 0.
 
-    def __str__(self) -> str:
-        return ' '.join([str(self.depth), str(self.runtime), str(self.time), str(self.tank), str(self.ceiling)])
-
 
 class Profile:
     def __init__(self, waypoints: list[Waypoint], tanks: list[Tank], params: Parameters = Parameters()) -> None:
         self._params: Parameters = params
         self._tanks: list[Tank] = tanks
         self._waypoints: list[Waypoint] = []
-        self._max_depth_ata: float = 0.
-        self._depth: list[float] = []
-        self._ceiling: list[float] = []
-        self._runtime: list[float] = []
-        self._points: list[Point] = []
 
         self._complete_waypoints(waypoints)
+
+        t = 0
+        for idx, wp in enumerate(self._waypoints):
+            if t > (wp.runtime.seconds + wp.duration.seconds):
+                continue
+            else:
+                while t <= (wp.runtime.seconds + wp.duration.seconds):
+                    print(idx, Waypoint(self._interpolate_depth(Time(t, 's')), self._params.dt, Time(t, 's')))
+                    t = t + self._params.dt.seconds
 
     def _complete_waypoints(self, waypoints: list[Waypoint]) -> None:
         if waypoints[0].depth != 0:
@@ -273,8 +278,21 @@ class Profile:
 
         return out
 
-    @staticmethod
-    def _interpolate(wp_0: Waypoint, wp_1: Waypoint, runtime: Time):
+    def _interpolate_depth(self, runtime: Time) -> float:
+        wp_0 = None
+        wp_1 = None
+
+        for idx, wp in enumerate(self._waypoints):
+            if runtime.seconds == wp.runtime.seconds:
+                return wp.depth
+            elif runtime.seconds > wp.runtime.seconds:
+                wp_0 = wp
+                wp_1 = self._waypoints[idx + 1]
+                continue
+
+        if (wp_0 is None) or (wp_1 is None):
+            raise InterpolationError
+
         out = (wp_1.depth - wp_0.depth) / (wp_1.runtime.seconds - wp_0.runtime.seconds)
         out = out * (runtime.seconds - wp_0.runtime.seconds)
         out = out + wp_0.depth
