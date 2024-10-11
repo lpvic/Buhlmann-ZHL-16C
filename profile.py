@@ -1,5 +1,5 @@
 import json
-from math import log, ceil
+from math import log, ceil, floor
 from pathlib import Path
 from copy import deepcopy
 from collections import namedtuple
@@ -22,11 +22,42 @@ b_he = np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553,
                  0.9171, 0.9217, 0.9267])
 pw = 0.0567
 
-Waypoint = namedtuple('Waypoint', 'depth duration runtime', defaults=[0, 0, 0])
-
 
 class IncorrectGasMixture(Exception):
     pass
+
+
+class IncorrectTimeUnit(Exception):
+    pass
+
+
+class Time:
+    def __init__(self, time: float | int, unit='m'):
+        self._unit = unit
+        if self._unit == 'm':
+            self._minutes: float = time
+            self._seconds: int = int(round(time / 60., 0))
+        elif self._unit == 's':
+            self._seconds = time
+            self._minutes = self.seconds * 60
+        else:
+            raise IncorrectTimeUnit
+
+    @property
+    def seconds(self) -> int:
+        return self._seconds
+
+    @property
+    def minutes(self) -> float:
+        return self._minutes
+
+    def __str__(self) -> str:
+        mins = floor(self._minutes)
+        secs = self._seconds - mins * 60
+        return '{}:{}'.format(mins, secs)
+
+    def __repr__(self) -> str:
+        return '<Time: {}>'.format(self._minutes)
 
 
 @dataclass
@@ -49,7 +80,7 @@ class Parameters:
     deco_stops = True
     safety_stop = True
 
-    dt = 10. / 60.
+    dt = Time(time=10, unit='s')
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
@@ -130,6 +161,25 @@ class Tank:
         return self._size
 
 
+class Waypoint:
+    def __init__(self, depth: float = 0., duration: float | Time = None, runtime: float | Time = None):
+        self.depth = depth
+
+        if duration is None:
+            self.duration = Time(0)
+        elif isinstance(duration, Time):
+            self.duration = duration
+        else:
+            self.duration = Time(duration)
+
+        if runtime is None:
+            self.runtime = Time(0)
+        elif isinstance(duration, Time):
+            self.runtime = runtime
+        else:
+            self.runtime = Time(runtime)
+
+
 class Point:
     def __init__(self, depth: float, time: int = -1, tank: int = 0) -> None:
         self._depth = depth
@@ -164,8 +214,7 @@ class Point:
 
 
 class Profile:
-    def __init__(self, waypoints: list[Waypoint], tanks: list[Tank],
-                 params: Parameters = Parameters()) -> None:
+    def __init__(self, waypoints: list[Waypoint], tanks: list[Tank], params: Parameters = Parameters()) -> None:
         self._params = params
         self._tanks = tanks
         self._waypoints = []
@@ -180,10 +229,10 @@ class Profile:
     def _complete_waypoints(self, waypoints):
         if waypoints[0].depth != 0:
             time_to_bottom = waypoints[0].depth / self._params.v_desc
-            self._waypoints.append(Waypoint(0, time_to_bottom, 0))
+            self._waypoints.append(Waypoint(0, Time(time_to_bottom), Time(0)))
             self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, self._waypoints[0].duration))
         else:
-            self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, 0))
+            self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, Time(0)))
 
         for idx, wp in enumerate(waypoints[1:], start=1):
             prev_wp = self._waypoints[-1]
@@ -215,9 +264,9 @@ class Profile:
         return out
 
     @staticmethod
-    def _interpolate(wp_0: Waypoint, wp_1: Waypoint, runtime: float):
-        out = (wp_1.depth - wp_0.depth) / (wp_1.runtime - wp_0.runtime)
-        out = out * (runtime - wp_0.runtime)
+    def _interpolate(wp_0: Waypoint, wp_1: Waypoint, runtime: Time):
+        out = (wp_1.depth - wp_0.depth) / (wp_1.runtime.seconds - wp_0.runtime.seconds)
+        out = out * (runtime.seconds - wp_0.runtime.seconds)
         out = out + wp_0.depth
 
         return out
