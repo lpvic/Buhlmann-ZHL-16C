@@ -36,10 +36,10 @@ class Time:
         self._unit = unit
         if self._unit == 'm':
             self._minutes: float = time
-            self._seconds: int = int(round(time / 60., 0))
+            self._seconds: int = int(round(time * 60., 0))
         elif self._unit == 's':
             self._seconds = time
-            self._minutes = self.seconds * 60
+            self._minutes = self.seconds / 60
         else:
             raise IncorrectTimeUnit
 
@@ -51,10 +51,14 @@ class Time:
     def minutes(self) -> float:
         return self._minutes
 
+    @property
+    def unit(self) -> str:
+        return self._unit
+
     def __str__(self) -> str:
         mins = floor(self._minutes)
         secs = self._seconds - mins * 60
-        return '{}:{}'.format(mins, secs)
+        return '{:02d}:{:02d}'.format(mins, secs)
 
     def __repr__(self) -> str:
         return '<Time: {}>'.format(self._minutes)
@@ -62,25 +66,25 @@ class Time:
 
 @dataclass
 class Parameters:
-    last_stop_depth = 6
-    stop_depth_incr = 3
+    last_stop_depth: float = 6
+    stop_depth_incr: float = 3
 
-    v_asc = 10
-    v_desc = 20
+    v_asc: float = 10
+    v_desc: float = 20
 
-    own_descent_sac = 20
-    own_bottom_sac = 20
-    own_ascent_sac = 17
-    buddy_ascent_sac = 17
+    own_descent_sac: float = 20
+    own_bottom_sac: float = 20
+    own_ascent_sac: float = 17
+    buddy_ascent_sac: float = 17
 
-    gf_high = 1.
-    gf_low = 1.
+    gf_high: float = 1.
+    gf_low: float = 1.
 
-    calc_ascent = True
-    deco_stops = True
-    safety_stop = True
+    calc_ascent: bool = True
+    deco_stops: bool = True
+    safety_stop: bool = True
 
-    dt = Time(time=10, unit='s')
+    dt: Time = Time(time=10, unit='s')
 
     def to_json(self) -> str:
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
@@ -91,9 +95,9 @@ class Parameters:
 
 class Gas:
     def __init__(self, o2: int = 21, he: int = 0) -> None:
-        self._O2 = o2
-        self._He = he
-        self._N2 = 100 - o2 - he
+        self._O2: int = o2
+        self._He: int = he
+        self._N2: int = 100 - o2 - he
 
     def ppO2(self, depth: float) -> float:
         pabs = (depth / 10) + 1
@@ -162,8 +166,10 @@ class Tank:
 
 
 class Waypoint:
-    def __init__(self, depth: float = 0., duration: float | Time = None, runtime: float | Time = None):
+    def __init__(self, depth: float = 0., duration: float | Time = None, runtime: float | Time = None) -> None:
         self.depth = depth
+        self.duration: Time
+        self.runtime: Time
 
         if duration is None:
             self.duration = Time(0)
@@ -174,10 +180,14 @@ class Waypoint:
 
         if runtime is None:
             self.runtime = Time(0)
-        elif isinstance(duration, Time):
+        elif isinstance(runtime, Time):
             self.runtime = runtime
         else:
             self.runtime = Time(runtime)
+
+    def __str__(self) -> str:
+        return ('Waypoint(depth={depth}m, duration={duration}{ud}, runtime={runtime}{ur})'
+                .format(depth=self.depth, duration=self.duration, ud=self.duration.unit, runtime=self.runtime, ur=self.runtime.unit))
 
 
 class Point:
@@ -215,21 +225,21 @@ class Point:
 
 class Profile:
     def __init__(self, waypoints: list[Waypoint], tanks: list[Tank], params: Parameters = Parameters()) -> None:
-        self._params = params
-        self._tanks = tanks
-        self._waypoints = []
-        self._max_depth_ata = 0.
-        self._depth = []
-        self._ceiling = []
-        self._runtime = []
-        self._points = []
+        self._params: Parameters = params
+        self._tanks: list[Tank] = tanks
+        self._waypoints: list[Waypoint] = []
+        self._max_depth_ata: float = 0.
+        self._depth: list[float] = []
+        self._ceiling: list[float] = []
+        self._runtime: list[float] = []
+        self._points: list[Point] = []
 
         self._complete_waypoints(waypoints)
 
-    def _complete_waypoints(self, waypoints):
+    def _complete_waypoints(self, waypoints: list[Waypoint]) -> None:
         if waypoints[0].depth != 0:
-            time_to_bottom = waypoints[0].depth / self._params.v_desc
-            self._waypoints.append(Waypoint(0, Time(time_to_bottom), Time(0)))
+            time_to_bottom = Time(waypoints[0].depth / self._params.v_desc, unit='m')
+            self._waypoints.append(Waypoint(0, time_to_bottom, Time(0)))
             self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, self._waypoints[0].duration))
         else:
             self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, Time(0)))
@@ -238,21 +248,21 @@ class Profile:
             prev_wp = self._waypoints[-1]
 
             if wp.depth > prev_wp.depth:
-                desc_time = (wp.depth - prev_wp.depth) / self._params.v_desc
-                self._waypoints.append(Waypoint(prev_wp.depth, desc_time, prev_wp.runtime + prev_wp.duration))
+                desc_time = Time((wp.depth - prev_wp.depth) / self._params.v_desc)
+                self._waypoints.append(Waypoint(prev_wp.depth, desc_time, prev_wp.runtime.minutes + prev_wp.duration.minutes))
             elif wp.depth < prev_wp.depth:
-                asc_time = (prev_wp.depth - wp.depth) / self._params.v_asc
-                self._waypoints.append(Waypoint(prev_wp.depth, asc_time, prev_wp.runtime + prev_wp.duration))
+                asc_time = Time((prev_wp.depth - wp.depth) / self._params.v_asc)
+                self._waypoints.append(Waypoint(prev_wp.depth, asc_time, prev_wp.runtime.minutes + prev_wp.duration.minutes))
 
             prev_wp = self._waypoints[-1]
             if idx == (len(waypoints) - 1):
-                duration = 0
+                duration = Time(0)
             else:
                 duration = wp.duration
-            self._waypoints.append(Waypoint(wp.depth, duration, prev_wp.runtime + prev_wp.duration))
+            self._waypoints.append(Waypoint(wp.depth, duration, prev_wp.runtime.minutes + prev_wp.duration.minutes))
 
     @property
-    def waypoints(self):
+    def waypoints(self) -> list[Waypoint]:
         return self._waypoints
 
     @staticmethod
@@ -276,7 +286,7 @@ class Profile:
         runtime = []
         for wp in self._waypoints:
             depth.append(wp.depth)
-            runtime.append(wp.runtime)
+            runtime.append(wp.runtime.seconds)
         plt.gca().invert_yaxis()
         plt.plot(runtime, depth, 'bo-')
         plt.show()
