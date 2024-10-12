@@ -89,6 +89,7 @@ class Parameters:
     gf_low: float = 1.
 
     calc_ascent: bool = True
+    calc_descent: bool = True
     deco_stops: bool = True
     safety_stop: bool = True
 
@@ -232,8 +233,20 @@ class Profile:
         self._waypoints: list[Waypoint] = []
         self._integration_points: list[IntegrationPoint] = []
 
-        self._complete_waypoints(waypoints)
+        self._complete_waypoints(waypoints, self._params.calc_descent)
+        self._calculate_bottom()
+        self._calculate_direct_ascent(0., self._integration_points[-1])
 
+    def calculate_direct_ascent(self, runtime: float):
+        asc_ip = None
+        for ip in self._integration_points:
+            if ip.waypoint.runtime.seconds <= runtime:
+                asc_ip = ip
+                break
+
+        return self._calculate_direct_ascent(depth=0., ip=asc_ip, append=False)
+
+    def _calculate_bottom(self):
         t = 0
         for idx, wp in enumerate(self._waypoints):
             if t > (wp.runtime.seconds + wp.duration.seconds):
@@ -252,11 +265,14 @@ class Profile:
                     self._integration_points.append(new_ip)
                     t = t + self._params.dt.seconds
 
-    def _complete_waypoints(self, waypoints: list[Waypoint]) -> None:
+    def _complete_waypoints(self, waypoints: list[Waypoint], desc: bool = True) -> None:
         if waypoints[0].depth != 0:
             time_to_bottom = Time(waypoints[0].depth / self._params.v_desc, unit='m')
-            self._waypoints.append(Waypoint(0, time_to_bottom, Time(0)))
-            self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, self._waypoints[0].duration))
+            if desc:
+                self._waypoints.append(Waypoint(0, time_to_bottom, Time(0)))
+                self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, self._waypoints[0].duration))
+            else:
+                self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, Time(0)))
         else:
             self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, Time(0)))
 
@@ -326,22 +342,28 @@ class Profile:
 
         return (out - 1.) * 10
 
-    def _calculate_direct_ascent(self, ip: IntegrationPoint):
+    def _calculate_direct_ascent(self, depth: float, ip: IntegrationPoint, append: bool = True) -> list[IntegrationPoint] | None:
         prev_ip = ip
-        new_ip = None
         t = ip.waypoint.runtime.seconds
-        while prev_ip.waypoint.depth > 0.:
-            t = t + self._params.dt
+        out = []
+        while prev_ip.waypoint.depth > depth:
+            t = t + self._params.dt.seconds
             new_wp = Waypoint(depth=prev_ip.waypoint.depth - (self._params.v_asc * self._params.dt.minutes),
-                              duration=self._params.dt, runtime=Time(t))
+                              duration=self._params.dt, runtime=Time(t, 's'))
             new_ip = IntegrationPoint(new_wp, prev_ip.tank)
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
             new_ip.ceilings = self._calculate_ceilings(new_ip)
-
             prev_ip = new_ip
+            out.append(new_ip)
 
-        return new_ip
+        if append:
+            self._waypoints.append(out[-1].waypoint)
+            self._integration_points = self._integration_points + out
+        else:
+            return out
 
+    def _calculate_regular_ascent(self, prev_ip):
+        pass
 
     @property
     def waypoints(self) -> list[Waypoint]:
@@ -407,7 +429,7 @@ class Profile:
             depth.append(ip.waypoint.depth)
             runtime.append(ip.waypoint.runtime.seconds)
         plt.gca().invert_yaxis()
-        plt.plot(runtime, depth, 'bo-', markersize=2)
+        plt.plot(runtime, depth, 'b-', markersize=2)
         plt.show()
 
     def plot_compartment(self, gas: str, compartment: int):
@@ -417,7 +439,7 @@ class Profile:
             p_ig.append(ip.load_ig[gas][compartment - 1])
             runtime.append(ip.waypoint.runtime.seconds)
         plt.gca().invert_yaxis()
-        plt.plot(runtime, p_ig, 'bo-', markersize=2)
+        plt.plot(runtime, p_ig, 'b-', markersize=2)
         plt.show()
 
     def plot_compartments(self, gas: str):
@@ -428,7 +450,7 @@ class Profile:
             for ip in self._integration_points:
                 p_ig.append(ip.load_ig[gas][c])
                 runtime.append(ip.waypoint.runtime.seconds)
-            plt.plot(runtime, p_ig, colors[c] + 'o-', markersize=2)
+            plt.plot(runtime, p_ig, colors[c] + '-', markersize=2)
         plt.gca().invert_yaxis()
         plt.show()
 
@@ -440,7 +462,7 @@ class Profile:
             for ip in self._integration_points:
                 ceilings.append(ip.ceilings[c])
                 runtime.append(ip.waypoint.runtime.seconds)
-            plt.plot(runtime, ceilings, colors[c] + 'o-', markersize=2)
+            plt.plot(runtime, ceilings, colors[c] + '-', markersize=2)
         plt.gca().invert_yaxis()
         plt.show()
 
@@ -451,5 +473,5 @@ class Profile:
             ceiling.append(ip.ceiling)
             runtime.append(ip.waypoint.runtime.seconds)
         plt.gca().invert_yaxis()
-        plt.plot(runtime, ceiling, 'bo-', markersize=2)
+        plt.plot(runtime, ceiling, 'b-', markersize=2)
         plt.show()
