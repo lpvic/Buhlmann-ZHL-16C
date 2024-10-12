@@ -66,7 +66,7 @@ class Time:
     def __str__(self) -> str:
         mins = floor(self._minutes)
         secs = self._seconds - mins * 60
-        return '{:02d}:{:02d}'.format(mins, secs)
+        return '{:02d}:{:04.1f}'.format(int(floor(mins)), secs)
 
     def __repr__(self) -> str:
         return '<Time: {}>'.format(self._minutes)
@@ -219,9 +219,10 @@ class IntegrationPoint:
             return 0.
 
     def __str__(self):
-        return ('IntegrationPoint(depth={depth:.1f}, duration={duration}, runtime={runtime}, tank={tank})'
+        return ('IntegrationPoint(depth={depth:.1f}, duration={duration}, runtime={runtime}, tank={tank},'
+                ' ceiling={ceiling:.1f})'
                 .format(depth=self.waypoint.depth, duration=self.waypoint.duration, runtime=self.waypoint.runtime,
-                        tank=self.tank))
+                        tank=self.tank, ceiling=self.ceiling))
 
 
 class Profile:
@@ -240,6 +241,7 @@ class Profile:
             else:
                 while t <= (wp.runtime.seconds + wp.duration.seconds):
                     new_wp = Waypoint(self._interpolate_depth(Time(t, 's')), self._params.dt, Time(t, 's'))
+
                     new_ip = IntegrationPoint(new_wp, self._select_tank(new_wp.depth))
 
                     if self._integration_points:
@@ -323,6 +325,23 @@ class Profile:
         out = out / ((gf / b) - gf + 1.)
 
         return (out - 1.) * 10
+
+    def _calculate_direct_ascent(self, ip: IntegrationPoint):
+        prev_ip = ip
+        new_ip = None
+        t = ip.waypoint.runtime.seconds
+        while prev_ip.waypoint.depth > 0.:
+            t = t + self._params.dt
+            new_wp = Waypoint(depth=prev_ip.waypoint.depth - (self._params.v_asc * self._params.dt.minutes),
+                              duration=self._params.dt, runtime=Time(t))
+            new_ip = IntegrationPoint(new_wp, prev_ip.tank)
+            new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
+            new_ip.ceilings = self._calculate_ceilings(new_ip)
+
+            prev_ip = new_ip
+
+        return new_ip
+
 
     @property
     def waypoints(self) -> list[Waypoint]:
