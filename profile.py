@@ -76,6 +76,8 @@ class Time:
 class Parameters:
     last_stop_depth: float = 6
     stop_depth_incr: float = 3
+    safety_stop_depth: float = 5
+    safety_stop_duration: float = 3
 
     v_asc: float = 10
     v_desc: float = 20
@@ -220,7 +222,7 @@ class IntegrationPoint:
             return 0.
 
     def __str__(self):
-        return ('IntegrationPoint(depth={depth:.1f}, duration={duration}, runtime={runtime}, tank={tank},'
+        return ('IntegrationPoint(depth={depth:.5f}, duration={duration}, runtime={runtime}, tank={tank},'
                 ' ceiling={ceiling:.1f})'
                 .format(depth=self.waypoint.depth, duration=self.waypoint.duration, runtime=self.waypoint.runtime,
                         tank=self.tank, ceiling=self.ceiling))
@@ -235,7 +237,7 @@ class Profile:
 
         self._complete_waypoints(waypoints, self._params.calc_descent)
         self._calculate_bottom()
-        self._calculate_direct_ascent(0., self._integration_points[-1])
+        self._calculate_regular_ascent(5., self._integration_points[-1])
 
     def calculate_direct_ascent(self, runtime: float):
         asc_ip = None
@@ -342,13 +344,14 @@ class Profile:
 
         return (out - 1.) * 10
 
-    def _calculate_direct_ascent(self, depth: float, ip: IntegrationPoint, append: bool = True) -> list[IntegrationPoint] | None:
+    def _calculate_direct_ascent(self, depth: float, ip: IntegrationPoint, append: bool = True)\
+            -> list[IntegrationPoint]:
         prev_ip = ip
         t = ip.waypoint.runtime.seconds
         out = []
         while prev_ip.waypoint.depth > depth:
             t = t + self._params.dt.seconds
-            new_wp = Waypoint(depth=prev_ip.waypoint.depth - (self._params.v_asc * self._params.dt.minutes),
+            new_wp = Waypoint(depth=round(prev_ip.waypoint.depth - (self._params.v_asc * self._params.dt.minutes), 1),
                               duration=self._params.dt, runtime=Time(t, 's'))
             new_ip = IntegrationPoint(new_wp, prev_ip.tank)
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
@@ -357,13 +360,43 @@ class Profile:
             out.append(new_ip)
 
         if append:
-            self._waypoints.append(out[-1].waypoint)
+            duration = out[-1].waypoint.runtime.seconds - out[0].waypoint.runtime.seconds + self._params.dt.seconds
+            self._waypoints[-1].duration = Time(duration, 's')
+            self._waypoints.append(Waypoint(out[-1].waypoint.depth, 0, out[-1].waypoint.runtime))
             self._integration_points = self._integration_points + out
-        else:
-            return out
 
-    def _calculate_regular_ascent(self, prev_ip):
-        pass
+        return out
+
+    def _calculate_regular_ascent(self, depth: float, ip: IntegrationPoint, append: bool = True)\
+            -> list[IntegrationPoint] | None:
+        prev_ip = ip
+        segments = [self._calculate_direct_ascent(self._params.safety_stop_depth, prev_ip, False)]
+
+        prev_ip = segments[-1][-1]
+        t = prev_ip.waypoint.runtime.seconds
+        safety_stop_timer = 0.
+        out = []
+        while safety_stop_timer < Time(self._params.safety_stop_duration).seconds:
+            t = t + self._params.dt.seconds
+            new_wp = Waypoint(self._params.safety_stop_depth, self._params.dt, Time(t, 's'))
+            new_ip = IntegrationPoint(new_wp, prev_ip.tank)
+            new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
+            new_ip.ceilings = self._calculate_ceilings(new_ip)
+            prev_ip = new_ip
+            safety_stop_timer = safety_stop_timer + self._params.dt.seconds
+            out.append(new_ip)
+        segments.append(out)
+
+        segments.append(self._calculate_direct_ascent(0., segments[-1][-1], False))
+
+        if append:
+            for s in segments:
+                duration = s[-1].waypoint.runtime.seconds - s[0].waypoint.runtime.seconds + self._params.dt.seconds
+                self._waypoints[-1].duration = Time(duration, 's')
+                self._waypoints.append(Waypoint(s[-1].waypoint.depth, 0, s[-1].waypoint.runtime))
+                self._integration_points = self._integration_points + s
+
+        return out
 
     @property
     def waypoints(self) -> list[Waypoint]:
@@ -397,7 +430,7 @@ class Profile:
 
         for idx, wp in enumerate(self._waypoints):
             if runtime.seconds == wp.runtime.seconds:
-                return wp.depth
+                return round(wp.depth, 1)
             elif runtime.seconds > wp.runtime.seconds:
                 wp_0 = wp
                 wp_1 = self._waypoints[idx + 1]
@@ -410,7 +443,7 @@ class Profile:
         out = out * (runtime.seconds - wp_0.runtime.seconds)
         out = out + wp_0.depth
 
-        return out
+        return round(out, 1)
 
     def plot_waypoints(self):
         depth = []
@@ -473,5 +506,20 @@ class Profile:
             ceiling.append(ip.ceiling)
             runtime.append(ip.waypoint.runtime.seconds)
         plt.gca().invert_yaxis()
-        plt.plot(runtime, ceiling, 'b-', markersize=2)
+        plt.plot(runtime, ceiling, 'bo-', markersize=2)
+        plt.show()
+
+    def plot(self):
+        depth = []
+        ceiling = []
+        runtime = []
+        for ip in self._integration_points:
+            depth.append(ip.waypoint.depth)
+            ceiling.append(ip.ceiling)
+            runtime.append(str(ip.waypoint.runtime))
+        plt.gca().invert_yaxis()
+        plt.plot(runtime, depth, 'b-', markersize=2)
+        plt.plot(runtime, ceiling, 'r-', markersize=2)
+        ticks = plt.xticks()
+        plt.xticks(ticks[0][::180], ticks[1][::180])
         plt.show()
