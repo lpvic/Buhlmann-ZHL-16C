@@ -238,10 +238,14 @@ class Profile:
 
         self._complete_waypoints(waypoints, self._params.calc_descent)
         self._calculate_bottom()
-        if self._integration_points[-1].ceiling <= 0:
-            self._calculate_regular_ascent(0., self._integration_points[-1])
-        else:
+        deco_dive = self._calculate_direct_ascent(0, self._integration_points[-1], False)[-1].ceiling > 0.
+        if deco_dive:
             self._calculate_deco_ascent(0., self._integration_points[-1])
+        else:
+            if self._params.safety_stop:
+                self._calculate_regular_ascent(0., self._integration_points[-1])
+            else:
+                self._calculate_direct_ascent(0., self._integration_points[-1])
 
     def calculate_direct_ascent(self, runtime: float):
         asc_ip = None
