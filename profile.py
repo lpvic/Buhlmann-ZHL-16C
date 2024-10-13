@@ -295,7 +295,6 @@ class Profile:
             wps.append(Waypoint(wps[0].depth, Time(0), wps[0].runtime.minutes + wps[0].duration.minutes))
 
         for idx, wp in enumerate(wps[1:], start=1):
-            print('entra')
             prev_wp = self._waypoints[-1]
 
             if wp.depth > prev_wp.depth:

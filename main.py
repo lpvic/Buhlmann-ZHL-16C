@@ -15,7 +15,7 @@ waypoints = [Waypoint(30, 20)]  # , Waypoint(30, 2)]
 
 # Create profile
 profile = Profile(waypoints=waypoints, tanks=tanks, params=params)
-print(waypoints)
+
 for ip in profile.waypoints:
     print(ip)
 
