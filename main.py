@@ -1,7 +1,7 @@
 from profile import *
 
 # Initialize setup object
-params = Parameters(dt=Time(1, 's'), gf_low=.3, gf_high=.75)
+params = Parameters(dt=Time(1, 's'), gf_low=.3, gf_high=.75, last_stop_depth=3)
 
 # Create tanks
 tanks = [Tank(size=12, gas=Gas(o2=21), p_start=200)]  # ,
@@ -19,7 +19,7 @@ profile = Profile(waypoints=waypoints, tanks=tanks, params=params)
 for ip in profile.waypoints:
     print(ip)
 
-# profile.plot_waypoints()
+profile.plot_waypoints()
 # profile.plot_integration_points()
 # profile.plot_compartments('N2')
 # profile.plot_ceilings()

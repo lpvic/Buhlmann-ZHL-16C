@@ -75,7 +75,7 @@ class Time:
 
 @dataclass
 class Parameters:
-    last_stop_depth: float = 6
+    last_stop_depth: float = 3
     stop_depth_incr: float = 3
     safety_stop_depth: float = 5
     safety_stop_duration: float = 3
@@ -371,24 +371,27 @@ class Profile:
     def _calculate_regular_ascent(self, depth: float, ip: IntegrationPoint, append: bool = True)\
             -> list[IntegrationPoint] | None:
         prev_ip = ip
-        segments = [self._calculate_direct_ascent(self._params.safety_stop_depth, prev_ip, False)]
+        if depth > self._params.safety_stop_depth:
+            segments = [self._calculate_direct_ascent(depth, prev_ip, False)]
+        else:
+            segments = [self._calculate_direct_ascent(self._params.safety_stop_depth, prev_ip, False)]
 
-        prev_ip = segments[-1][-1]
-        t = prev_ip.waypoint.runtime.seconds
-        safety_stop_timer = 0.
-        out = []
-        while safety_stop_timer < Time(self._params.safety_stop_duration).seconds:
-            t = t + self._params.dt.seconds
-            new_wp = Waypoint(self._params.safety_stop_depth, self._params.dt, Time(t, 's'))
-            new_ip = IntegrationPoint(new_wp, prev_ip.tank)
-            new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
-            new_ip.ceilings = self._calculate_ceilings(new_ip)
-            prev_ip = new_ip
-            safety_stop_timer = safety_stop_timer + self._params.dt.seconds
-            out.append(new_ip)
-        segments.append(out)
+            prev_ip = segments[-1][-1]
+            t = prev_ip.waypoint.runtime.seconds
+            safety_stop_timer = 0.
+            out = []
+            while safety_stop_timer < Time(self._params.safety_stop_duration).seconds:
+                t = t + self._params.dt.seconds
+                new_wp = Waypoint(self._params.safety_stop_depth, self._params.dt, Time(t, 's'))
+                new_ip = IntegrationPoint(new_wp, prev_ip.tank)
+                new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
+                new_ip.ceilings = self._calculate_ceilings(new_ip)
+                prev_ip = new_ip
+                safety_stop_timer = safety_stop_timer + self._params.dt.seconds
+                out.append(new_ip)
+            segments.append(out)
 
-        segments.append(self._calculate_direct_ascent(0., segments[-1][-1], False))
+            segments.append(self._calculate_direct_ascent(depth, segments[-1][-1], False))
 
         if append:
             for s in segments:
@@ -401,7 +404,7 @@ class Profile:
 
     def _calculate_deco_ascent(self, depth: float, ip: IntegrationPoint, append: bool = True) -> list[IntegrationPoint]:
         prev_ip = ip
-        next_deco_stop = ceil(prev_ip.ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr
+        next_deco_stop = self._calculate_next_deco_stop(prev_ip.ceiling)
         t = ip.waypoint.runtime.seconds
 
         segments = []
@@ -414,14 +417,20 @@ class Profile:
                 new_ip = IntegrationPoint(new_wp, prev_ip.tank)
                 new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
                 new_ip.ceilings = self._calculate_ceilings(new_ip)
-                next_deco_stop = ceil(new_ip.ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr
+                next_deco_stop = self._calculate_next_deco_stop(new_ip.ceiling)
+
                 prev_ip = new_ip
 
                 out.append(new_ip)
-            segments.append(out)
+
+            if out:
+                segments.append(out)
+
             if next_deco_stop > 0.:
+
+                print(next_deco_stop)
                 segments.append(self._add_deco_stop(next_deco_stop, segments[-1][-1]))
-                next_deco_stop = ceil(segments[-1][-1].ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr
+                next_deco_stop = self._calculate_next_deco_stop(segments[-1][-1].ceiling)
 
             prev_ip = segments[-1][-1]
             t = prev_ip.waypoint.runtime.seconds
@@ -439,7 +448,7 @@ class Profile:
         prev_ip = ip
         t = ip.waypoint.runtime.seconds
         out = []
-        next_deco_stop = ceil(prev_ip.ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr
+        next_deco_stop = self._calculate_next_deco_stop(prev_ip.ceiling)
 
         stop_time = self._params.dt.seconds
         while prev_ip.ceiling < next_deco_stop:
@@ -449,7 +458,7 @@ class Profile:
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
             new_ip.ceilings = self._calculate_ceilings(new_ip)
             prev_ip = new_ip
-            next_deco_stop = ceil(prev_ip.ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr
+            next_deco_stop = self._calculate_next_deco_stop(prev_ip.ceiling)
 
             out.append(new_ip)
 
@@ -468,6 +477,19 @@ class Profile:
             stop_time = stop_time + self._params.dt.seconds
 
             out.append(new_ip)
+
+        return out
+
+    def _calculate_next_deco_stop(self, ceiling: float):
+        out = ceil(ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr
+        if (((out <= self._params.last_stop_depth)
+            or ((out - self._params.last_stop_depth) < self._params.stop_depth_incr))
+                and (ceiling > 0)):
+            if ceiling < self._params.last_stop_depth:
+                out = self._params.last_stop_depth
+            else:
+                out = ((ceil(ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr) +
+                       self._params.stop_depth_incr)
 
         return out
 
