@@ -41,7 +41,7 @@ class InterpolationError(Exception):
 
 
 class Time:
-    def __init__(self, time: float | int, unit='m'):
+    def __init__(self, time: float | int, unit='m') -> None:
         self._unit = unit
         if self._unit == 'm':
             self._minutes: float = time
@@ -125,7 +125,7 @@ class Gas:
         pabs = (depth / 10) + 1
         return pabs * self._He / 100
 
-    def mod(self, pp_o2=1.4):
+    def mod(self, pp_o2=1.4) -> float:
         return 10 * ((pp_o2 / (self._O2 / 100)) - 1)
 
     @property
@@ -165,17 +165,17 @@ class Gas:
 
 
 class Tank:
-    def __init__(self, p_start: int = 200, gas: Gas = Gas(), size: int = 15):
+    def __init__(self, p_start: int = 200, gas: Gas = Gas(), size: int = 15) -> None:
         self._gas = gas
         self.pressure = [p_start]
         self._size = size
 
     @property
-    def gas(self):
+    def gas(self) -> Gas:
         return self._gas
 
     @property
-    def size(self):
+    def size(self) -> int:
         return self._size
 
 
@@ -226,7 +226,7 @@ class IntegrationPoint:
         else:
             return 0.
 
-    def __str__(self):
+    def __str__(self) -> str:
         return ('IntegrationPoint(depth={depth:.5f}, duration={duration}, runtime={runtime}, tank={tank},'
                 ' ceiling={ceiling:.1f})'
                 .format(depth=self.waypoint.depth, duration=self.waypoint.duration, runtime=self.waypoint.runtime,
@@ -251,16 +251,7 @@ class Profile:
             else:
                 self._calculate_direct_ascent(0., self._integration_points[-1])
 
-    def calculate_direct_ascent(self, runtime: float):
-        asc_ip = None
-        for ip in self._integration_points:
-            if ip.waypoint.runtime.seconds <= runtime:
-                asc_ip = ip
-                break
-
-        return self._calculate_direct_ascent(depth=0., ip=asc_ip, append=False)
-
-    def _calculate_bottom(self):
+    def _calculate_bottom(self) -> None:
         t = 0
         for idx, wp in enumerate(self._waypoints):
             if t > (wp.runtime.seconds + wp.duration.seconds):
@@ -313,7 +304,7 @@ class Profile:
                 duration = wp.duration
             self._waypoints.append(Waypoint(wp.depth, duration, prev_wp.runtime.minutes + prev_wp.duration.minutes))
 
-    def _calculate_compartments(self, ip: IntegrationPoint, prev_ip: IntegrationPoint):
+    def _calculate_compartments(self, ip: IntegrationPoint, prev_ip: IntegrationPoint) -> dict[str, float]:
         out = {}
         p_amb = ip.p_amb
 
@@ -333,7 +324,7 @@ class Profile:
 
         return out
 
-    def _calculate_ceilings(self, ip: IntegrationPoint):
+    def _calculate_ceilings(self, ip: IntegrationPoint) -> np.ndarray:
         a_n2 = ZH_L16['C']['N2']['a']
         b_n2 = ZH_L16['C']['N2']['b']
         a_he = ZH_L16['C']['He']['a']
@@ -384,7 +375,7 @@ class Profile:
         return out
 
     def _calculate_regular_ascent(self, depth: float, ip: IntegrationPoint, append: bool = True)\
-            -> list[IntegrationPoint] | None:
+            -> list[IntegrationPoint]:
         prev_ip = ip
         if depth > self._params.safety_stop_depth:
             segments = [self._calculate_direct_ascent(depth, prev_ip, False)]
@@ -493,7 +484,7 @@ class Profile:
 
         return out
 
-    def _calculate_next_deco_stop(self, ceiling: float):
+    def _calculate_next_deco_stop(self, ceiling: float) -> float:
         out = ceil(ceiling / self._params.stop_depth_incr) * self._params.stop_depth_incr
         if (((out <= self._params.last_stop_depth)
             or ((out - self._params.last_stop_depth) < self._params.stop_depth_incr))
@@ -523,7 +514,7 @@ class Profile:
 
         return out
 
-    def _select_tank(self, depth: float):
+    def _select_tank(self, depth: float) -> int:
         tank = 0
         max_o2 = 0
         for t in self._tanks:
@@ -553,7 +544,7 @@ class Profile:
 
         return round(out, 1)
 
-    def plot_waypoints(self):
+    def plot_waypoints(self) -> None:
         depth = []
         runtime = []
         for wp in self._waypoints:
@@ -563,7 +554,7 @@ class Profile:
         plt.plot(runtime, depth, 'bo-')
         plt.show()
 
-    def plot_integration_points(self):
+    def plot_integration_points(self) -> None:
         depth = []
         runtime = []
         for ip in self._integration_points:
@@ -573,7 +564,7 @@ class Profile:
         plt.plot(runtime, depth, 'b-', markersize=2)
         plt.show()
 
-    def plot_compartment(self, gas: str, compartment: int):
+    def plot_compartment(self, gas: str, compartment: int) -> None:
         p_ig = []
         runtime = []
         for ip in self._integration_points:
@@ -583,7 +574,7 @@ class Profile:
         plt.plot(runtime, p_ig, 'b-', markersize=2)
         plt.show()
 
-    def plot_compartments(self, gas: str):
+    def plot_compartments(self, gas: str) -> None:
         colors = 'bgrcmkbgrcmkbgrc'
         for c in range(16):
             p_ig = []
@@ -595,7 +586,7 @@ class Profile:
         plt.gca().invert_yaxis()
         plt.show()
 
-    def plot_ceilings(self):
+    def plot_ceilings(self) -> None:
         colors = 'bgrcmkbgrcmkbgrc'
         for c in range(16):
             ceilings = []
@@ -607,7 +598,7 @@ class Profile:
         plt.gca().invert_yaxis()
         plt.show()
 
-    def plot_ceiling(self):
+    def plot_ceiling(self) -> None:
         ceiling = []
         runtime = []
         for ip in self._integration_points:
@@ -617,7 +608,7 @@ class Profile:
         plt.plot(runtime, ceiling, 'bo-', markersize=2)
         plt.show()
 
-    def plot(self):
+    def plot(self) -> None:
         depth = []
         ceiling = []
         runtime = []
