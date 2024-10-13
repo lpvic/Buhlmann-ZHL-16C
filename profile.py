@@ -306,7 +306,6 @@ class Profile:
                 self._waypoints.append(Waypoint(prev_wp.depth, asc_time,
                                                 prev_wp.runtime.minutes + prev_wp.duration.minutes))
 
-            print(self._waypoints)
             prev_wp = self._waypoints[-1]
             if idx == (len(waypoints) - 1):
                 duration = Time(0)
