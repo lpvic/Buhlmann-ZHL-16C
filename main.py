@@ -1,7 +1,7 @@
 from profile import *
 
 # Initialize setup object
-params = Parameters(dt=Time(1, 's'), gf_low=.3, gf_high=.75, last_stop_depth=3)
+params = Parameters(dt=Time(1, 's'), gf_low=.3, gf_high=.75, last_stop_depth=6)
 
 # Create tanks
 tanks = [Tank(size=12, gas=Gas(o2=21), p_start=200)]  # ,

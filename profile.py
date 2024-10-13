@@ -238,7 +238,10 @@ class Profile:
 
         self._complete_waypoints(waypoints, self._params.calc_descent)
         self._calculate_bottom()
-        self._calculate_deco_ascent(0., self._integration_points[-1])
+        if self._integration_points[-1].ceiling <= 0:
+            self._calculate_regular_ascent(0., self._integration_points[-1])
+        else:
+            self._calculate_deco_ascent(0., self._integration_points[-1])
 
     def calculate_direct_ascent(self, runtime: float):
         asc_ip = None
@@ -427,8 +430,6 @@ class Profile:
                 segments.append(out)
 
             if next_deco_stop > 0.:
-
-                print(next_deco_stop)
                 segments.append(self._add_deco_stop(next_deco_stop, segments[-1][-1]))
                 next_deco_stop = self._calculate_next_deco_stop(segments[-1][-1].ceiling)
 
