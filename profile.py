@@ -203,6 +203,10 @@ class Waypoint:
         return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime})'
                 .format(depth=self.depth, duration=self.duration, runtime=self.runtime))
 
+    def __repr__(self) -> str:
+        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime})'
+                .format(depth=self.depth, duration=self.duration, runtime=self.runtime))
+
 
 class IntegrationPoint:
     def __init__(self, waypoint: Waypoint, tank: int) -> None:
@@ -276,17 +280,22 @@ class Profile:
                     t = t + self._params.dt.seconds
 
     def _complete_waypoints(self, waypoints: list[Waypoint], desc: bool = True) -> None:
-        if waypoints[0].depth != 0:
-            time_to_bottom = Time(waypoints[0].depth / self._params.v_desc, unit='m')
+        wps = [wp for wp in waypoints]
+        if wps[0].depth != 0:
+            time_to_bottom = Time(wps[0].depth / self._params.v_desc, unit='m')
             if desc:
                 self._waypoints.append(Waypoint(0, time_to_bottom, Time(0)))
-                self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, self._waypoints[0].duration))
+                self._waypoints.append(Waypoint(wps[0].depth, wps[0].duration, self._waypoints[0].duration))
             else:
-                self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, Time(0)))
+                self._waypoints.append(Waypoint(wps[0].depth, wps[0].duration, Time(0)))
         else:
-            self._waypoints.append(Waypoint(waypoints[0].depth, waypoints[0].duration, Time(0)))
+            self._waypoints.append(Waypoint(wps[0].depth, wps[0].duration, Time(0)))
 
-        for idx, wp in enumerate(waypoints[1:], start=1):
+        if len(wps) == 1:
+            wps.append(Waypoint(wps[0].depth, Time(0), wps[0].runtime.minutes + wps[0].duration.minutes))
+
+        for idx, wp in enumerate(wps[1:], start=1):
+            print('entra')
             prev_wp = self._waypoints[-1]
 
             if wp.depth > prev_wp.depth:
@@ -298,6 +307,7 @@ class Profile:
                 self._waypoints.append(Waypoint(prev_wp.depth, asc_time,
                                                 prev_wp.runtime.minutes + prev_wp.duration.minutes))
 
+            print(self._waypoints)
             prev_wp = self._waypoints[-1]
             if idx == (len(waypoints) - 1):
                 duration = Time(0)
