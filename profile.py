@@ -582,6 +582,11 @@ class Profile:
 
         return out
 
+    def _calculate_gas_consumption(self, ip: IntegrationPoint, prev_ip: IntegrationPoint) -> None:
+        consumption = (prev_ip.p_amb + ip.p_amb) / 2
+        consumption = consumption * prev_ip.waypoint.duration.minutes
+        start_press = self._tanks[prev_ip.tank].pressure
+
     def _select_tank(self, depth: float) -> int:
         tank = 0
         max_o2 = 0

@@ -4,7 +4,7 @@ from profile import *
 params = Parameters(dt=Time(1, 's'), gf_low=1, gf_high=1, last_stop_depth=3)
 
 # Create tanks
-tanks = [Tank(size=12, gas=Gas(o2=21), p_start=200)]  # ,
+tanks = [Tank(size=15, gas=Gas(o2=21), p_start=200)]  # ,
          # Tank(size=10, gas=Gas(o2=50), p_start=200)]
 
 # Create waypoints
