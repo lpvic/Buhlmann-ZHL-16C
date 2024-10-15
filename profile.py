@@ -201,12 +201,12 @@ class Waypoint:
             self.runtime = Time(runtime)
 
     def __str__(self) -> str:
-        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime})'
-                .format(depth=self.depth, duration=self.duration, runtime=self.runtime))
+        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime}, tank={tank})'
+                .format(depth=self.depth, duration=self.duration, runtime=self.runtime, tank=self.tank))
 
     def __repr__(self) -> str:
-        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime})'
-                .format(depth=self.depth, duration=self.duration, runtime=self.runtime))
+        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime}, tank={tank})'
+                .format(depth=self.depth, duration=self.duration, runtime=self.runtime, tank=self.tank))
 
 
 class IntegrationPoint:
