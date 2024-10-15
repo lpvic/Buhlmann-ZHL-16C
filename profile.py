@@ -180,10 +180,11 @@ class Tank:
 
 
 class Waypoint:
-    def __init__(self, depth: float = 0., duration: float | Time = None, runtime: float | Time = None) -> None:
+    def __init__(self, depth: float = 0., duration: float | Time = None, runtime: float | Time = None, tank: int = 0) -> None:
         self.depth: float = depth / 1.
         self.duration: Time
         self.runtime: Time
+        self.tank = tank
 
         if duration is None:
             self.duration = Time(0)
