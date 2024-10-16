@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 from dataclasses import dataclass
 
 import numpy as np
+from sipbuild.generator.parser.rules import p_pod_type
 
 # Coefficients for Bühlmann ZH-L16C
 ZH_L16 = {
@@ -96,7 +97,8 @@ class Parameters:
     deco_stops: bool = True
     safety_stop: bool = True
 
-    gas_switch = 'depth'  # 'depth' | 'stop'
+    gas_switch: str = 'depth'  # 'depth' | 'stop' | 'manual'
+    gas_switch_duration: float = 60
 
     dt: Time = Time(time=5, unit='s')
 
@@ -180,10 +182,11 @@ class Tank:
 
 
 class Waypoint:
-    def __init__(self, depth: float = 0., duration: float | Time = None, runtime: float | Time = None) -> None:
+    def __init__(self, depth: float = 0., duration: float | Time = None, runtime: float | Time = None, tank: int = 0) -> None:
         self.depth: float = depth / 1.
         self.duration: Time
         self.runtime: Time
+        self.tank = tank
 
         if duration is None:
             self.duration = Time(0)
@@ -200,18 +203,17 @@ class Waypoint:
             self.runtime = Time(runtime)
 
     def __str__(self) -> str:
-        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime})'
-                .format(depth=self.depth, duration=self.duration, runtime=self.runtime))
+        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime}, tank={tank})'
+                .format(depth=self.depth, duration=self.duration, runtime=self.runtime, tank=self.tank))
 
     def __repr__(self) -> str:
-        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime})'
-                .format(depth=self.depth, duration=self.duration, runtime=self.runtime))
+        return ('Waypoint(depth={depth:.1f}, duration={duration}, runtime={runtime}, tank={tank})'
+                .format(depth=self.depth, duration=self.duration, runtime=self.runtime, tank=self.tank))
 
 
 class IntegrationPoint:
-    def __init__(self, waypoint: Waypoint, tank: int) -> None:
+    def __init__(self, waypoint: Waypoint) -> None:
         self.waypoint = waypoint
-        self.tank = tank
         self.tank_pressure = []
         self.load_ig = {'N2': np.full(16, 0.79 * (1 - pw)), 'He': np.zeros(16)}
         self.ceilings = np.ones(16)
@@ -231,7 +233,7 @@ class IntegrationPoint:
         return ('IntegrationPoint(depth={depth:.5f}, duration={duration}, runtime={runtime}, tank={tank},'
                 ' ceiling={ceiling:.1f}, tank_pressure={tank_pressure})'
                 .format(depth=self.waypoint.depth, duration=self.waypoint.duration, runtime=self.waypoint.runtime,
-                        tank=self.tank, ceiling=self.ceiling,
+                        tank=self.waypoint.tank, ceiling=self.ceiling,
                         tank_pressure=[int('{:.0f}'.format(p)) for p in self.tank_pressure]))
 
 
@@ -381,7 +383,7 @@ class Profile:
                 while t <= (wp.runtime.seconds + wp.duration.seconds):
                     new_wp = Waypoint(self._interpolate_depth(Time(t, 's')), self._params.dt, Time(t, 's'))
 
-                    new_ip = IntegrationPoint(new_wp, 0)
+                    new_ip = IntegrationPoint(new_wp)
                     new_ip.tank_pressure = [x.start_pressure for x in self._tanks]
 
                     if self._integration_points:
@@ -405,8 +407,8 @@ class Profile:
         while prev_ip.waypoint.depth > depth:
             t = t + self._params.dt.seconds
             new_wp = Waypoint(depth=round(prev_ip.waypoint.depth - (self._params.v_asc * self._params.dt.minutes), 1),
-                              duration=self._params.dt, runtime=Time(t, 's'))
-            new_ip = IntegrationPoint(new_wp, prev_ip.tank)
+                              duration=self._params.dt, runtime=Time(t, 's'), tank=prev_ip.waypoint.tank)
+            new_ip = IntegrationPoint(new_wp)
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
             new_ip.ceilings = self._calculate_ceilings(new_ip)
             new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
@@ -435,8 +437,8 @@ class Profile:
             out = []
             while safety_stop_timer < Time(self._params.safety_stop_duration).seconds:
                 t = t + self._params.dt.seconds
-                new_wp = Waypoint(self._params.safety_stop_depth, self._params.dt, Time(t, 's'))
-                new_ip = IntegrationPoint(new_wp, prev_ip.tank)
+                new_wp = Waypoint(self._params.safety_stop_depth, self._params.dt, Time(t, 's'), prev_ip.waypoint.tank)
+                new_ip = IntegrationPoint(new_wp)
                 new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
                 new_ip.ceilings = self._calculate_ceilings(new_ip)
                 new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
@@ -459,20 +461,24 @@ class Profile:
     def _calculate_deco_ascent(self, depth: float, ip: IntegrationPoint, append: bool = True) -> list[IntegrationPoint]:
         prev_ip = ip
         next_deco_stop = self._calculate_next_deco_stop(prev_ip.ceiling)
+        next_gas_stop = self._calculate_next_gas_stop(prev_ip.waypoint.depth)
+        next_stop = max([next_deco_stop, next_gas_stop])
+
         t = ip.waypoint.runtime.seconds
 
         segments = []
         while prev_ip.waypoint.depth > depth:
             out = []
-            while prev_ip.waypoint.depth > next_deco_stop:
+            while prev_ip.waypoint.depth > next_stop:
                 t = t + self._params.dt.seconds
                 new_depth = round(prev_ip.waypoint.depth - (self._params.v_asc * self._params.dt.minutes), 1)
-                new_wp = Waypoint(depth=new_depth, duration=self._params.dt, runtime=Time(t, 's'))
-                new_ip = IntegrationPoint(new_wp, prev_ip.tank)
+                new_wp = Waypoint(depth=new_depth, duration=self._params.dt, runtime=Time(t, 's'), tank=prev_ip.waypoint.tank)
+                new_ip = IntegrationPoint(new_wp)
                 new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
                 new_ip.ceilings = self._calculate_ceilings(new_ip)
                 new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
                 next_deco_stop = self._calculate_next_deco_stop(new_ip.ceiling)
+                next_stop = max([next_deco_stop, next_gas_stop])
 
                 prev_ip = new_ip
 
@@ -481,9 +487,16 @@ class Profile:
             if out:
                 segments.append(out)
 
-            if next_deco_stop > 0.:
+            if (next_deco_stop > 0.) and (next_deco_stop > next_gas_stop):
                 segments.append(self._add_deco_stop(next_deco_stop, segments[-1][-1]))
                 next_deco_stop = self._calculate_next_deco_stop(segments[-1][-1].ceiling)
+                next_stop = max([next_deco_stop, next_gas_stop])
+
+            if (next_gas_stop > 0.) and (next_gas_stop > next_deco_stop):
+
+                segments.append(self._add_gas_switch_stop(next_gas_stop, segments[-1][-1]))
+                next_gas_stop = self._calculate_next_gas_stop(segments[-1][-1].waypoint.depth)
+                next_stop = max([next_deco_stop, next_gas_stop])
 
             prev_ip = segments[-1][-1]
             t = prev_ip.waypoint.runtime.seconds
@@ -503,7 +516,7 @@ class Profile:
 
         for g in ['N2', 'He']:
             p0 = prev_ip.load_ig[g]
-            f_ig = self._tanks[prev_ip.tank].gas.fN2 if g == 'N2' else self._tanks[prev_ip.tank].gas.fHe
+            f_ig = self._tanks[prev_ip.waypoint.tank].gas.fN2 if g == 'N2' else self._tanks[prev_ip.waypoint.tank].gas.fHe
             pi = np.full(16, f_ig * (p_amb - pw))
             r = (((ip.waypoint.depth - prev_ip.waypoint.depth) / prev_ip.waypoint.duration.minutes) * f_ig) / 10
             k = log(2) / ZH_L16['C'][g]['ht']
@@ -565,11 +578,13 @@ class Profile:
         stop_time = self._params.dt.seconds
         while prev_ip.ceiling < next_deco_stop:
             t = t + self._params.dt.seconds
-            new_wp = Waypoint(depth=depth, duration=self._params.dt, runtime=Time(t, 's'))
-            new_ip = IntegrationPoint(new_wp, prev_ip.tank)
+            new_wp = Waypoint(depth=depth, duration=self._params.dt, runtime=Time(t, 's'), tank=prev_ip.waypoint.tank)
+            new_ip = IntegrationPoint(new_wp)
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
             new_ip.ceilings = self._calculate_ceilings(new_ip)
             new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
+            if ((self._params.gas_switch == 'stop') or (self._params.gas_switch == 'depth')) and (stop_time >= (self._params.gas_switch_duration - 1)):
+                new_ip.waypoint.tank = self._select_tank(new_ip.waypoint.depth)
             prev_ip = new_ip
             next_deco_stop = self._calculate_next_deco_stop(prev_ip.ceiling)
 
@@ -582,8 +597,58 @@ class Profile:
 
         while (int(floor(stop_time)) % 60) != 0:
             t = t + self._params.dt.seconds
-            new_wp = Waypoint(depth=depth, duration=self._params.dt, runtime=Time(t, 's'))
-            new_ip = IntegrationPoint(new_wp, prev_ip.tank)
+            new_wp = Waypoint(depth=depth, duration=self._params.dt, runtime=Time(t, 's'), tank=prev_ip.waypoint.tank)
+            new_ip = IntegrationPoint(new_wp)
+            new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
+            new_ip.ceilings = self._calculate_ceilings(new_ip)
+            new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
+            if ((self._params.gas_switch == 'stop') or (self._params.gas_switch == 'depth')) and (stop_time >= (self._params.gas_switch_duration - 1)):
+                new_ip.waypoint.tank = self._select_tank(new_ip.waypoint.depth)
+            prev_ip = new_ip
+            stop_time = stop_time + self._params.dt.seconds
+
+            out.append(new_ip)
+
+        return out
+
+    def _calculate_tank_pressure(self, ip: IntegrationPoint, prev_ip: IntegrationPoint, sac: float) -> list[float]:
+        rmv = sac * (ip.p_amb + prev_ip.p_amb) / 2
+        bar_min = rmv / self._tanks[prev_ip.waypoint.tank].size
+        consumption = bar_min * prev_ip.waypoint.duration.minutes
+
+        out = []
+        for p in prev_ip.tank_pressure:
+            out.append(p)
+        out[prev_ip.waypoint.tank] = out[prev_ip.waypoint.tank] - consumption
+
+        return out
+
+    def _select_tank(self, depth: float, pp_o2: float = 1.6) -> int:
+        tank = 0
+        max_o2 = 0
+        for t in self._tanks:
+            if (t.gas.O2 > max_o2) and (t.gas.mod(pp_o2) > depth):
+                tank = self._tanks.index(t)
+
+        return tank
+
+    def _calculate_next_gas_stop(self, depth: float, pp_o2: float = 1.6) -> float:
+        out = 0.
+        for t in self._tanks:
+            if depth > t.gas.mod(pp_o2):
+                if t.gas.mod(pp_o2) > out:
+                    out = t.gas.mod(pp_o2)
+        return out
+
+    def _add_gas_switch_stop(self, depth: float, prev_ip: IntegrationPoint) -> list[IntegrationPoint]:
+        t = prev_ip.waypoint.runtime.seconds
+        out = []
+
+        stop_time = self._params.dt.seconds
+        while stop_time <= self._params.gas_switch_duration:
+            t = t + self._params.dt.seconds
+            new_wp = Waypoint(depth=depth, duration=self._params.dt, runtime=Time(t, 's'), tank=prev_ip.waypoint.tank)
+            new_ip = IntegrationPoint(new_wp)
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
             new_ip.ceilings = self._calculate_ceilings(new_ip)
             new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
@@ -594,26 +659,7 @@ class Profile:
 
         return out
 
-    def _calculate_tank_pressure(self, ip: IntegrationPoint, prev_ip: IntegrationPoint, sac: float) -> list[float]:
-        rmv = sac * (ip.p_amb + prev_ip.p_amb) / 2
-        bar_min = rmv / self._tanks[prev_ip.tank].size
-        consumption = bar_min * prev_ip.waypoint.duration.minutes
 
-        out = []
-        for p in prev_ip.tank_pressure:
-            out.append(p)
-        out[prev_ip.tank] = out[prev_ip.tank] - consumption
-
-        return out
-
-    def _select_tank(self, depth: float) -> int:
-        tank = 0
-        max_o2 = 0
-        for t in self._tanks:
-            if (t.gas.O2 > max_o2) and (t.gas.mod(pp_o2=1.6) > depth):
-                tank = self._tanks.index(t)
-
-        return tank
 
     def _interpolate_depth(self, runtime: Time) -> float:
         wp_0 = None
