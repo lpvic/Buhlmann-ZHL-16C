@@ -245,10 +245,11 @@ class IntegrationPoint:
 
     def __str__(self) -> str:
         return ('IntegrationPoint(depth={depth:.5f}, duration={duration}, runtime={runtime}, tank={tank},'
-                ' ceiling={ceiling:.1f}, tank_pressure={tank_pressure})'
+                ' ceiling={ceiling:.1f}, tank_pressure={tank_pressure}, cns={cns}, otu={otu})'
                 .format(depth=self.waypoint.depth, duration=self.waypoint.duration, runtime=self.waypoint.runtime,
                         tank=self.waypoint.tank, ceiling=self.ceiling,
-                        tank_pressure=[int('{:.0f}'.format(p)) for p in self.tank_pressure]))
+                        tank_pressure=[int('{:.0f}'.format(p)) for p in self.tank_pressure],
+                        cns = self.cns_cum, otu=self.otu_cum))
 
 
 class Profile:
@@ -408,6 +409,10 @@ class Profile:
                         else:
                             sac = self._params.own_bottom_sac
                         new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, sac)
+                        new_ip.cns = self._calculate_cns(new_ip, prev_ip)
+                        new_ip.cns_cum = prev_ip.cns_cum + new_ip.cns
+                        new_ip.otu = self._calculate_otu(new_ip, prev_ip)
+                        new_ip.otu_cum = prev_ip.otu_cum + new_ip.otu
 
                     new_ip.ceilings = self._calculate_ceilings(new_ip)
                     self._integration_points.append(new_ip)
@@ -426,6 +431,10 @@ class Profile:
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
             new_ip.ceilings = self._calculate_ceilings(new_ip)
             new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
+            new_ip.cns = self._calculate_cns(new_ip, prev_ip)
+            new_ip.cns_cum = prev_ip.cns_cum + new_ip.cns
+            new_ip.otu = self._calculate_otu(new_ip, prev_ip)
+            new_ip.otu_cum = prev_ip.otu_cum + new_ip.otu
             prev_ip = new_ip
             out.append(new_ip)
 
@@ -456,6 +465,10 @@ class Profile:
                 new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
                 new_ip.ceilings = self._calculate_ceilings(new_ip)
                 new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
+                new_ip.cns = self._calculate_cns(new_ip, prev_ip)
+                new_ip.cns_cum = prev_ip.cns_cum + new_ip.cns
+                new_ip.otu = self._calculate_otu(new_ip, prev_ip)
+                new_ip.otu_cum = prev_ip.otu_cum + new_ip.otu
                 prev_ip = new_ip
                 safety_stop_timer = safety_stop_timer + self._params.dt.seconds
                 out.append(new_ip)
@@ -491,6 +504,10 @@ class Profile:
                 new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
                 new_ip.ceilings = self._calculate_ceilings(new_ip)
                 new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
+                new_ip.cns = self._calculate_cns(new_ip, prev_ip)
+                new_ip.cns_cum = prev_ip.cns_cum + new_ip.cns
+                new_ip.otu = self._calculate_otu(new_ip, prev_ip)
+                new_ip.otu_cum = prev_ip.otu_cum + new_ip.otu
                 next_deco_stop = self._calculate_next_deco_stop(new_ip.ceiling)
                 next_stop = max([next_deco_stop, next_gas_stop])
 
@@ -507,7 +524,6 @@ class Profile:
                 next_stop = max([next_deco_stop, next_gas_stop])
 
             if (next_gas_stop > 0.) and (next_gas_stop > next_deco_stop):
-
                 segments.append(self._add_gas_switch_stop(next_gas_stop, segments[-1][-1]))
                 next_gas_stop = self._calculate_next_gas_stop(segments[-1][-1].waypoint.depth)
                 next_stop = max([next_deco_stop, next_gas_stop])
@@ -596,9 +612,13 @@ class Profile:
             new_ip = IntegrationPoint(new_wp)
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
             new_ip.ceilings = self._calculate_ceilings(new_ip)
-            new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
             if ((self._params.gas_switch == 'stop') or (self._params.gas_switch == 'depth')) and (stop_time >= (self._params.gas_switch_duration - 1)):
                 new_ip.waypoint.tank = self._select_tank(new_ip.waypoint.depth)
+            new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
+            new_ip.cns = self._calculate_cns(new_ip, prev_ip)
+            new_ip.cns_cum = prev_ip.cns_cum + new_ip.cns
+            new_ip.otu = self._calculate_otu(new_ip, prev_ip)
+            new_ip.otu_cum = prev_ip.otu_cum + new_ip.otu
             prev_ip = new_ip
             next_deco_stop = self._calculate_next_deco_stop(prev_ip.ceiling)
 
@@ -618,6 +638,10 @@ class Profile:
             new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
             if ((self._params.gas_switch == 'stop') or (self._params.gas_switch == 'depth')) and (stop_time >= (self._params.gas_switch_duration - 1)):
                 new_ip.waypoint.tank = self._select_tank(new_ip.waypoint.depth)
+            new_ip.cns = self._calculate_cns(new_ip, prev_ip)
+            new_ip.cns_cum = prev_ip.cns_cum + new_ip.cns
+            new_ip.otu = self._calculate_otu(new_ip, prev_ip)
+            new_ip.otu_cum = prev_ip.otu_cum + new_ip.otu
             prev_ip = new_ip
             stop_time = stop_time + self._params.dt.seconds
 
@@ -665,7 +689,13 @@ class Profile:
             new_ip = IntegrationPoint(new_wp)
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
             new_ip.ceilings = self._calculate_ceilings(new_ip)
+            if ((self._params.gas_switch == 'stop') or (self._params.gas_switch == 'depth')) and (stop_time >= (self._params.gas_switch_duration - 1)):
+                new_ip.waypoint.tank = self._select_tank(new_ip.waypoint.depth)
             new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
+            new_ip.cns = self._calculate_cns(new_ip, prev_ip)
+            new_ip.cns_cum = prev_ip.cns_cum + new_ip.cns
+            new_ip.otu = self._calculate_otu(new_ip, prev_ip)
+            new_ip.otu_cum = prev_ip.otu_cum + new_ip.otu
             prev_ip = new_ip
             stop_time = stop_time + self._params.dt.seconds
 
@@ -682,7 +712,7 @@ class Profile:
             otu = segment_time * pow(0.5 / (pp_o2_ini - 0.5), -5. / 6.)
         else:
             max_pp_o2 = max(pp_o2_ini, pp_o2_end)
-            min_pp_o2 = max(pp_o2_ini, pp_o2_end)
+            min_pp_o2 = min(pp_o2_ini, pp_o2_end)
 
             if max_pp_o2 < 0.5:
                 return 0.
@@ -706,14 +736,18 @@ class Profile:
         pp_o2_ini = self._tanks[prev_ip.waypoint.tank].gas.ppO2(prev_ip.waypoint.depth)
         pp_o2_end = self._tanks[ip.waypoint.tank].gas.ppO2(ip.waypoint.depth)
 
+        if (pp_o2_ini < 0.5) or (pp_o2_end < 0.5):
+            return 0.
+
+
         m = 0.
         b = 0.
         for k, v in noaa_cns_equations.items():
             if (pp_o2_ini >= k[0]) and (pp_o2_ini < k[1]):
                 m = v[0]
                 b = v[1]
-            else:
-                raise PPO2OutOfRange
+                break
+
 
         t_lim = m * pp_o2_ini + b
         if ip.waypoint.depth == prev_ip.waypoint.depth:
