@@ -6,7 +6,6 @@ from matplotlib import pyplot as plt
 from dataclasses import dataclass
 
 import numpy as np
-from sipbuild.generator.parser.rules import p_pod_type
 
 # Coefficients for Bühlmann ZH-L16C
 ZH_L16 = {
@@ -26,6 +25,14 @@ ZH_L16 = {
             'b': np.array([0.4770, 0.5747, 0.6527, 0.7223, 0.7582, 0.7957, 0.8279, 0.8553, 0.8757, 0.8903, 0.8997,
                            0.9073, 0.9122, 0.9171, 0.9217, 0.9267])}}}
 
+# NOAA table for CNS calculation
+noaa_cns_points = {0.5: 900., 0.6: 720., 0.7: 570., 0.8: 450., 0.9: 360., 1.0: 300., 1.1: 270, 1.2: 240, 1.3: 210., 1.4: 180.,
+            1.5: 180., 1.6: 150.}
+noaa_cns_equations = {(0.5, 0.6): (-1800., 1800.), (0.6, 0.7): (-1500., 1620.), (0.7, 0.8): (-1200., 1410.),
+                      (0.8, 0.9): (-900., 1170.), (0.9, 1.1): (-600., 900.), (1.1, 1.5): (-300., 570.),
+                      (1.5, 1.6): (-750., 1245.)}
+
+# Water vapour pressure
 pw = 0.0567
 
 
@@ -38,6 +45,9 @@ class IncorrectTimeUnit(Exception):
 
 
 class InterpolationError(Exception):
+    pass
+
+class PPO2OutOfRange(Exception):
     pass
 
 
@@ -217,6 +227,10 @@ class IntegrationPoint:
         self.tank_pressure = []
         self.load_ig = {'N2': np.full(16, 0.79 * (1 - pw)), 'He': np.zeros(16)}
         self.ceilings = np.ones(16)
+        self.otu = 0.
+        self.otu_cum = 0.
+        self.cns = 0.
+        self.cns_cum = 0.
 
     @property
     def p_amb(self) -> float:
@@ -659,7 +673,58 @@ class Profile:
 
         return out
 
+    def _calculate_otu(self, ip: IntegrationPoint, prev_ip: IntegrationPoint) -> float:
+        segment_time = prev_ip.waypoint.duration.minutes
+        pp_o2_ini = self._tanks[prev_ip.waypoint.tank].gas.ppO2(prev_ip.waypoint.depth)
+        pp_o2_end = self._tanks[ip.waypoint.tank].gas.ppO2(ip.waypoint.depth)
 
+        if ip.waypoint.depth == prev_ip.waypoint.depth:
+            otu = segment_time * pow(0.5 / (pp_o2_ini - 0.5), -5. / 6.)
+        else:
+            max_pp_o2 = max(pp_o2_ini, pp_o2_end)
+            min_pp_o2 = max(pp_o2_ini, pp_o2_end)
+
+            if max_pp_o2 < 0.5:
+                return 0.
+
+            if min_pp_o2 < 0.5:
+                low_pp_o2 = 0.5
+            else:
+                low_pp_o2 = min_pp_o2
+
+            exposure_time = segment_time * ((max_pp_o2 - low_pp_o2) / (max_pp_o2 - min_pp_o2))
+
+            otu = pow((pp_o2_end - 0.5) / 0.5, 11. / 6.)
+            otu = otu - pow((pp_o2_ini - 0.5) / 0.5, 11. / 6.)
+            otu = 3. * exposure_time / 11. * otu
+            otu = otu / (pp_o2_end - pp_o2_ini)
+
+        return otu
+
+    def _calculate_cns(self, ip: IntegrationPoint, prev_ip: IntegrationPoint) -> float:
+        segment_time = prev_ip.waypoint.duration.minutes
+        pp_o2_ini = self._tanks[prev_ip.waypoint.tank].gas.ppO2(prev_ip.waypoint.depth)
+        pp_o2_end = self._tanks[ip.waypoint.tank].gas.ppO2(ip.waypoint.depth)
+
+        m = 0.
+        b = 0.
+        for k, v in noaa_cns_equations.items():
+            if (pp_o2_ini >= k[0]) and (pp_o2_ini < k[1]):
+                m = v[0]
+                b = v[1]
+            else:
+                raise PPO2OutOfRange
+
+        t_lim = m * pp_o2_ini + b
+        if ip.waypoint.depth == prev_ip.waypoint.depth:
+            cns = segment_time / t_lim
+        else:
+            k = (pp_o2_end - pp_o2_ini) / prev_ip.waypoint.duration.minutes
+            cns = log(abs(t_lim + (m * k * segment_time)))
+            cns = cns - log(abs(t_lim))
+            cns = cns / (m * k)
+
+        return cns
 
     def _interpolate_depth(self, runtime: Time) -> float:
         wp_0 = None
