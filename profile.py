@@ -441,7 +441,7 @@ class Profile:
         if append:
             duration = out[-1].waypoint.runtime.seconds - out[0].waypoint.runtime.seconds + self._params.dt.seconds
             self._waypoints[-1].duration = Time(duration, 's')
-            self._waypoints.append(Waypoint(out[-1].waypoint.depth, 0, out[-1].waypoint.runtime))
+            self._waypoints.append(Waypoint(out[-1].waypoint.depth, 0, out[-1].waypoint.runtime, out[-1].waypoint.tank))
             self._integration_points = self._integration_points + out
 
         return out
@@ -480,7 +480,7 @@ class Profile:
             for s in segments:
                 duration = s[-1].waypoint.runtime.seconds - s[0].waypoint.runtime.seconds + self._params.dt.seconds
                 self._waypoints[-1].duration = Time(duration, 's')
-                self._waypoints.append(Waypoint(s[-1].waypoint.depth, 0, s[-1].waypoint.runtime))
+                self._waypoints.append(Waypoint(s[-1].waypoint.depth, 0, s[-1].waypoint.runtime, out[-1].waypoint.tank))
                 self._integration_points = self._integration_points + s
 
         return list(itertools.chain(*segments))
@@ -535,7 +535,7 @@ class Profile:
             for s in segments:
                 duration = s[-1].waypoint.runtime.seconds - s[0].waypoint.runtime.seconds + self._params.dt.seconds
                 self._waypoints[-1].duration = Time(duration, 's')
-                self._waypoints.append(Waypoint(s[-1].waypoint.depth, 0, s[-1].waypoint.runtime))
+                self._waypoints.append(Waypoint(s[-1].waypoint.depth, 0, s[-1].waypoint.runtime, s[-1].waypoint.tank))
                 self._integration_points = self._integration_points + s
 
         return list(itertools.chain(*segments))
@@ -689,8 +689,6 @@ class Profile:
             new_ip = IntegrationPoint(new_wp)
             new_ip.load_ig = self._calculate_compartments(new_ip, prev_ip)
             new_ip.ceilings = self._calculate_ceilings(new_ip)
-            if ((self._params.gas_switch == 'stop') or (self._params.gas_switch == 'depth')) and (stop_time >= (self._params.gas_switch_duration - 1)):
-                new_ip.waypoint.tank = self._select_tank(new_ip.waypoint.depth)
             new_ip.tank_pressure = self._calculate_tank_pressure(new_ip, prev_ip, self._params.own_ascent_sac)
             new_ip.cns = self._calculate_cns(new_ip, prev_ip)
             new_ip.cns_cum = prev_ip.cns_cum + new_ip.cns
@@ -700,6 +698,10 @@ class Profile:
             stop_time = stop_time + self._params.dt.seconds
 
             out.append(new_ip)
+
+        if (self._params.gas_switch == 'depth') and (stop_time >= (self._params.gas_switch_duration - 1)):
+            out[-1].waypoint.tank = self._select_tank(out[-1].waypoint.depth)
+
 
         return out
 
