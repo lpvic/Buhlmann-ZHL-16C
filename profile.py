@@ -676,7 +676,7 @@ class Profile:
             if depth > t.gas.mod(pp_o2):
                 if t.gas.mod(pp_o2) > out:
                     out = t.gas.mod(pp_o2)
-        return out
+        return out if self._params == 'depth' else 0.
 
     def _add_gas_switch_stop(self, depth: float, prev_ip: IntegrationPoint) -> list[IntegrationPoint]:
         t = prev_ip.waypoint.runtime.seconds
