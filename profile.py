@@ -665,7 +665,7 @@ class Profile:
         tank = 0
         max_o2 = 0
         for t in self._tanks:
-            if (t.gas.O2 > max_o2) and (t.gas.mod(pp_o2) > depth):
+            if (t.gas.O2 > max_o2) and (t.gas.mod(pp_o2) >= depth):
                 tank = self._tanks.index(t)
 
         return tank
@@ -699,9 +699,7 @@ class Profile:
 
             out.append(new_ip)
 
-        if (self._params.gas_switch == 'depth') and (stop_time >= (self._params.gas_switch_duration - 1)):
-            out[-1].waypoint.tank = self._select_tank(out[-1].waypoint.depth)
-
+        out[-1].waypoint.tank = self._select_tank(out[-1].waypoint.depth)
 
         return out
 
@@ -741,21 +739,19 @@ class Profile:
         if (pp_o2_ini < 0.5) or (pp_o2_end < 0.5):
             return 0.
 
-
         m = 0.
         b = 0.
         for k, v in noaa_cns_equations.items():
-            if (pp_o2_ini >= k[0]) and (pp_o2_ini < k[1]):
+            if (pp_o2_ini >= k[0]) and (pp_o2_ini <= k[1]):
                 m = v[0]
                 b = v[1]
                 break
-
 
         t_lim = m * pp_o2_ini + b
         if ip.waypoint.depth == prev_ip.waypoint.depth:
             cns = segment_time / t_lim
         else:
-            k = (pp_o2_end - pp_o2_ini) / prev_ip.waypoint.duration.minutes
+            k = (pp_o2_end - pp_o2_ini) / segment_time
             cns = log(abs(t_lim + (m * k * segment_time)))
             cns = cns - log(abs(t_lim))
             cns = cns / (m * k)
