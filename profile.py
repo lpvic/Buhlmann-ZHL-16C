@@ -709,7 +709,7 @@ class Profile:
         pp_o2_end = self._tanks[ip.waypoint.tank].gas.ppO2(ip.waypoint.depth)
 
         if ip.waypoint.depth == prev_ip.waypoint.depth:
-            otu = segment_time * pow(0.5 / (pp_o2_ini - 0.5), -5. / 6.)
+            otu = segment_time * pow(0.5 / (pp_o2_ini - 0.5), -5. / 6.) if pp_o2_ini >= 0.5 else 0.
         else:
             max_pp_o2 = max(pp_o2_ini, pp_o2_end)
             min_pp_o2 = min(pp_o2_ini, pp_o2_end)
@@ -724,6 +724,8 @@ class Profile:
 
             exposure_time = segment_time * ((max_pp_o2 - low_pp_o2) / (max_pp_o2 - min_pp_o2))
 
+            pp_o2_ini = max(0.5, pp_o2_ini)
+            pp_o2_end = max(0.5, pp_o2_end)
             otu = pow((pp_o2_end - 0.5) / 0.5, 11. / 6.)
             otu = otu - pow((pp_o2_ini - 0.5) / 0.5, 11. / 6.)
             otu = 3. * exposure_time / 11. * otu
