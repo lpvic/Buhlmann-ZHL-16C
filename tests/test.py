@@ -1,4 +1,4 @@
-from src.jabai import *
+from src.yabai import *
 
 # Initialize setup object
 params = Parameters(dt=Time(1, 's'), gf_low=1., gf_high=1., last_stop_depth=3, gas_switch='stop')
@@ -29,4 +29,3 @@ profile.plot_compartments('N2')
 profile.plot_ceilings()
 profile.plot_ceiling()
 profile.plot()
-
