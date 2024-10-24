@@ -1,7 +1,7 @@
 from src.jabai import *
 
 # Initialize setup object
-params = Parameters(dt=Time(1, 's'), gf_low=1, gf_high=1, last_stop_depth=5, gas_switch='depth')
+params = Parameters(dt=Time(1, 's'), gf_low=1., gf_high=1., last_stop_depth=3, gas_switch='stop')
 
 # Create tanks
 tanks = [Tank(size=15, gas=Gas(o2=21), start_pressure=200),
@@ -17,6 +17,7 @@ waypoints = [Waypoint(45, 75)]  # , Waypoint(30, 2)]
 profile = Profile(waypoints=waypoints, tanks=tanks, params=params)
 
 for ip in profile.integration_points:
+    pass
     print(ip)
 
 for wp in profile.waypoints:
@@ -28,3 +29,4 @@ profile.plot_compartments('N2')
 profile.plot_ceilings()
 profile.plot_ceiling()
 profile.plot()
+
